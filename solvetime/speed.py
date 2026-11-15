@@ -59,11 +59,25 @@ def prefill_body() -> str:
     return "".join(line for line in lines if not line.startswith("# Prefill text") and not line.startswith("# Python is"))
 
 
+def system_available() -> int:
+    """Memory the system could hand out now: free, inactive, speculative and purgeable pages (vm_stat)."""
+    out = subprocess.run(["vm_stat"], capture_output=True, text=True).stdout
+    size = int(re.search(r"page size of (\d+) bytes", out).group(1))
+    pages = 0
+    for name in ("Pages free", "Pages inactive", "Pages speculative", "Pages purgeable"):
+        m = re.search(rf"{name}:\s+(\d+)", out)
+        pages += int(m.group(1)) if m else 0
+    return pages * size
+
+
 class MemorySampler:
-    """RSS and phys_footprint of a process tree, sampled every second; the peaks."""
+    """RSS and phys_footprint of a process tree, sampled every second; the peaks. Also the least memory the
+    system had available meanwhile: on a quiet machine, available-before-start minus that is everything the
+    engine takes (its own memory, GPU buffers, and the pages of memory-mapped weights alike)."""
 
     def __init__(self, pid: int):
         self.pid, self.rss, self.footprint, self.stop = pid, 0, 0, threading.Event()
+        self.available_min = system_available()
         self.thread = threading.Thread(target=self._run, daemon=True)
 
     def _tree(self):
@@ -86,6 +100,7 @@ class MemorySampler:
                     ["footprint", "-f", "bytes", "-p", str(p)], capture_output=True, text=True).stdout)
                 fp += int(m.group(1)) if m else 0
             self.footprint = max(self.footprint, fp)
+            self.available_min = min(self.available_min, system_available())
             self.stop.wait(1.0)
 
     def __enter__(self):
@@ -146,6 +161,7 @@ def main(argv=None):
             "pack": engine.pack, "command": engine.command, **calibrate()}
     out = open(path, "w")
     log = open(path.replace(".jsonl", ".engine.log"), "w")
+    meta["available_before_start"] = system_available()   # before the engine starts: the baseline
     t_start = time.monotonic()
     proc = subprocess.Popen(engine.command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
                             env=dict(os.environ, **engine.env))
@@ -184,7 +200,8 @@ def main(argv=None):
                     record(test=f"decode {name} T={temperature}", completion_tokens=n,
                            engine_completion_tokens=usage.get("completion_tokens"), ttft_s=ttft,
                            decode_tok_s=(n - 1) / span if span else None, rss_peak_bytes=mem.rss,
-                           footprint_peak_bytes=mem.footprint)
+                           footprint_peak_bytes=mem.footprint,
+                           system_taken_bytes=meta["available_before_start"] - mem.available_min)
     finally:
         if proc.poll() is None:
             os.killpg(proc.pid, signal.SIGTERM)
@@ -199,7 +216,7 @@ def main(argv=None):
 def table(paths: list[str]) -> str:
     """Markdown: one row per engine and model, medians with ranges."""
     lines = ["| Model | Engine | Bits per weight | Prefill 4K | Write T 0.6 | Write T 0 | Continue T 0.6 | Continue T 0 "
-             "| RSS under load | Footprint |", "|---|---|---|---|---|---|---|---|---|---|"]
+             "| Memory taken (system) | RSS | Footprint |", "|---|---|---|---|---|---|---|---|---|---|---|"]
     for p in paths:
         rows = [json.loads(line) for line in open(p)]
         meta = next((r for r in rows if r["test"] in ("meta", "load")), {})
@@ -213,11 +230,12 @@ def table(paths: list[str]) -> str:
 
         rss = max((r.get("rss_peak_bytes") or 0 for r in rows), default=0)
         fp = max((r.get("footprint_peak_bytes") or 0 for r in rows), default=0)
+        taken = max((r.get("system_taken_bytes") or 0 for r in rows), default=0)
         name = meta.get("engine", "") + (" (ours)" if meta.get("ours") else "")
         lines.append(f"| {meta.get('model')} | {name} {meta.get('version', '')} | {meta.get('bits_per_weight') or ''} "
                      f"| {cell('prefill', 'prefill_tok_s', '{:.0f}')} | "
                      + " | ".join(cell(f"decode {n} T={t}", "decode_tok_s", "{:.1f}") for n in PROMPTS for t in (0.6, 0.0))
-                     + f" | {rss / 1e9:.1f} GB | {fp / 1e9:.1f} GB |")
+                     + f" | {taken / 1e9:.1f} GB | {rss / 1e9:.1f} GB | {fp / 1e9:.1f} GB |")
     return "\n".join(lines) + "\n"
 
 

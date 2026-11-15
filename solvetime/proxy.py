@@ -64,7 +64,7 @@ class Meter:
     def take(self) -> list:
         with self.lock:
             rows, self.rows = self.rows, []
-        return rows
+        return [{k: v for k, v in r.items() if not k.startswith("_")} for r in rows]
 
 
 class Proxy:
@@ -110,15 +110,17 @@ class Proxy:
                         self._relay_stream(resp, row, t0)
                     else:
                         data = resp.read()
-                        self.send_header("Content-Length", str(len(data)))
-                        self.end_headers()
-                        self.wfile.write(data)
-                        if row is not None:
+                        if row is not None:  # recorded before the client has the reply, so a reader never misses it
                             row["seconds"] = time.perf_counter() - t0
                             row["status"] = resp.status
                             self._account(row, data)
+                            proxy.meter.add(row)
+                            row = None
+                        self.send_header("Content-Length", str(len(data)))
+                        self.end_headers()
+                        self.wfile.write(data)
                 except (OSError, http.client.HTTPException) as e:
-                    if row is not None:
+                    if row is not None and "seconds" not in row:
                         row.update(seconds=time.perf_counter() - t0, status=0, error=f"{type(e).__name__}: {e}")
                     try:
                         self.send_error(502, f"upstream: {e}")
@@ -126,7 +128,7 @@ class Proxy:
                         pass
                 finally:
                     conn.close()
-                    if row is not None:
+                    if row is not None and not row.get("_added"):
                         proxy.meter.add(row)
 
             def _relay_stream(self, resp, row, t0):
@@ -159,10 +161,12 @@ class Proxy:
                                 first = time.perf_counter() - t0
                             text += d.get("content") or ""
                             finish = ch.get("finish_reason") or finish
-                self.wfile.write(b"0\r\n\r\n")
-                if row is not None:
+                if row is not None:  # recorded before the stream's last chunk reaches the client
                     row.update(seconds=time.perf_counter() - t0, status=resp.status, ttft=first, finish=finish,
                                reply=_fingerprint(text), **_usage(usage))
+                    proxy.meter.add(row)
+                    row["_added"] = True
+                self.wfile.write(b"0\r\n\r\n")
 
             def _account(self, row, data):
                 try:

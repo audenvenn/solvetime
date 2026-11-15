@@ -39,7 +39,9 @@ class Engine:
             return ""
         try:
             out = subprocess.run(self.version_command, capture_output=True, text=True, timeout=60)
-            return (out.stdout or out.stderr).strip().splitlines()[-1][:200]
+            lines = (out.stdout + "\n" + out.stderr).strip().splitlines()
+            named = [line for line in lines if "version" in line.lower()]
+            return (named[0] if named else lines[-1]).strip()[:200]
         except (OSError, subprocess.TimeoutExpired, IndexError):
             return ""
 
@@ -174,4 +176,24 @@ def mlx_lm(model: str, port: int) -> Engine:
                   pack_dir=path if os.path.isdir(path) else None, info=_files_info)
 
 
-ENGINES = {"raceline": raceline, "kapitsa": kapitsa, "mtplx": mtplx, "mlx-lm": mlx_lm}
+def _gguf_info(engine: Engine) -> dict:
+    """A GGUF's size, and its bits per weight from the tensor sizes its header lists (vision tower excluded)."""
+    size = engine.pack_bytes()
+    return {"pack_bytes": size, "weights_bytes": size, "bits_per_weight": bits(size, engine.model)}
+
+
+def llama_cpp(model: str, port: int) -> Engine:
+    """llama.cpp's llama-server on a GGUF (SOLVETIME_GGUF), all layers on the GPU, flash attention, the model's
+    own chat template, and its MTP head as the drafter (--spec-type draft-mtp) when the GGUF carries one."""
+    gguf = os.environ.get("SOLVETIME_GGUF", "")
+    ctx = os.environ.get("SOLVETIME_LLAMA_CTX", "32768")
+    command = ["llama-server", "-m", gguf, "--port", str(port), "--host", "127.0.0.1", "-ngl", "999", "-fa", "on",
+               "--jinja", "-c", ctx]
+    if os.environ.get("SOLVETIME_LLAMA_SPEC", "draft-mtp") != "none":
+        command += ["--spec-type", os.environ.get("SOLVETIME_LLAMA_SPEC", "draft-mtp")]
+    return Engine("llama.cpp", model, os.path.basename(gguf) or "(set SOLVETIME_GGUF)", command, port,
+                  os.path.basename(gguf), health_path="/health", version_command=["llama-server", "--version"],
+                  pack_dir=gguf or None, info=_gguf_info)
+
+
+ENGINES = {"raceline": raceline, "kapitsa": kapitsa, "mtplx": mtplx, "mlx-lm": mlx_lm, "llama.cpp": llama_cpp}

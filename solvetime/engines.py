@@ -11,7 +11,9 @@ qwen3.5-9b. `pack()` maps that name to the engine's own build.
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass, field
@@ -41,6 +43,16 @@ class Engine:
         except (OSError, subprocess.TimeoutExpired, IndexError):
             return ""
 
+    info: object = None             # engine-specific pack_info(), when the build's files alone don't tell
+
+    def pack_info(self) -> dict:
+        """Size of the build's files, its weights in bytes and bits per weight (weights / the original
+        checkpoint's parameter count: bf16 is 16)."""
+        if callable(self.info):
+            return self.info(self)
+        size = self.pack_bytes()
+        return {"pack_bytes": size, "weights_bytes": size, "bits_per_weight": bits(size, self.model)}
+
     def pack_bytes(self) -> int | None:
         if not self.pack_dir or not os.path.exists(self.pack_dir):
             return None
@@ -57,6 +69,40 @@ class Engine:
 
 HOME = os.path.expanduser("~")
 
+# Parameters of the original checkpoints without their vision tower (Hugging Face safetensors metadata, minus
+# the tower's tensors): the text model and its MTP head. Engines load the tower only when an image comes.
+PARAMS = {"qwen3.5-9b": 9_653_104_368 - 456_010_480, "qwen3.8-27b": 27_781_427_952 - 460_730_096,
+          "qwen3.6-35b-a3b": 35_951_822_704 - 446_571_248}
+
+
+def text_weight_bytes(folder: str | None) -> int | None:
+    """Bytes of the tensors in a folder's *.safetensors that are not the vision tower (headers only)."""
+    if not folder or not os.path.isdir(folder):
+        return None
+    total = 0
+    for root, _, files in os.walk(folder):
+        for f in files:
+            if not f.endswith(".safetensors"):
+                continue
+            with open(os.path.join(root, f), "rb") as fh:
+                n = int.from_bytes(fh.read(8), "little")
+                header = json.loads(fh.read(n))
+            for name, meta in header.items():
+                if name != "__metadata__" and not re.search(r"visual|vision", name):
+                    start, end = meta["data_offsets"]
+                    total += end - start
+    return total or None
+
+
+def _files_info(engine: "Engine") -> dict:
+    return {"pack_bytes": engine.pack_bytes(), "weights_bytes": (w := text_weight_bytes(engine.pack_dir)),
+            "bits_per_weight": bits(w, engine.model)}
+
+
+def bits(weights_bytes: int | None, model: str) -> float | None:
+    """Bits per weight of the text model: bf16 is 16."""
+    return round(8 * weights_bytes / PARAMS[model], 2) if weights_bytes and model in PARAMS else None
+
 
 def raceline(model: str, port: int) -> Engine:
     alias = {"qwen3.6-35b-a3b": "qwen3.6-35b-a3b", "qwen3.8-27b": "qwen3.8-27b", "qwen3.5-9b": "qwen3.5-9b"}[model]
@@ -68,12 +114,37 @@ def raceline(model: str, port: int) -> Engine:
                   pack_dir=os.environ.get("SOLVETIME_RACELINE_FILE"), ours=True)
 
 
+def _kapitsa_info(engine: Engine) -> dict:
+    """The variant kapitsa resolves on this Mac, its folder, and the weights and formats `kapitsa doctor` lists."""
+    key = engine.command[engine.command.index("--model") + 1]
+    dry = subprocess.run(["kapitsa", "pull", "--dry-run", key], capture_output=True, text=True, timeout=120).stdout
+    m = re.search(r"folder:\s+(\S+)", dry)
+    folder = os.path.expanduser(m.group(1)) if m else None
+    variant = re.search(r"variant:\s+(.+)", dry)
+    engine.pack_dir = folder
+    out = {"pack": f"kapitsa {key}: {os.path.basename(folder) if folder else '?'}", "pack_bytes": engine.pack_bytes(),
+           "variant": variant.group(1).strip() if variant else None}
+    doctor = subprocess.run(["kapitsa", "doctor"], capture_output=True, text=True, timeout=300).stdout
+    name = os.path.basename(folder) if folder else ""
+    block = re.search(rf"^  {re.escape(name)}[ ,(].*?(?=^  \S|\Z)", doctor, re.M | re.S) if name else None
+    if block:
+        text = block.group(0)
+        w = re.search(r"weights ([0-9.]+) GB", text)
+        formats = re.search(r"weights ([^)]*)\)", text.splitlines()[0])
+        out["weights_bytes"] = int(float(w.group(1)) * 1e9) if w else None
+        out["weight_formats"] = formats.group(1) if formats else None
+        decoding = re.search(r"decoding: (.+)", text)
+        out["decoding"] = decoding.group(1).strip() if decoding else None
+    out["bits_per_weight"] = bits(out.get("weights_bytes"), engine.model)
+    return out
+
+
 def kapitsa(model: str, port: int) -> Engine:
     key = {"qwen3.6-35b-a3b": "35b", "qwen3.8-27b": "27b", "qwen3.5-9b": "9b"}[model]
     return Engine("kapitsa", model, f"kapitsa {key} (the variant `kapitsa doctor` plans for this Mac)",
                   ["kapitsa", "serve", "--model", key, "--port", str(port), "--private", "--local"],
                   port, {"35b": "qwen3.6-35b-a3b", "27b": "qwen3.8-27b", "9b": "qwen3.5-9b"}[key],
-                  version_command=["kapitsa", "--version"])
+                  version_command=["kapitsa", "--version"], info=_kapitsa_info)
 
 
 MTPLX_PACKS = {  # the catalog's recommendation for a 24 GB Mac where it has one (README, "Models and recommended settings")
@@ -88,7 +159,7 @@ def mtplx(model: str, port: int) -> Engine:
     exe = os.environ.get("SOLVETIME_MTPLX", os.path.join(HOME, "venvs/mtplx/bin/mtplx"))
     return Engine("mtplx", model, repo, [exe, "serve", "--model", repo, "--port", str(port), "--no-auth", "--yes"],
                   port, repo, health_path="/health", version_command=[exe, "--version"],
-                  pack_dir=os.path.join(HOME, ".mtplx/models", repo.replace("/", "--")))
+                  pack_dir=os.path.join(HOME, ".mtplx/models", repo.replace("/", "--")), info=_files_info)
 
 
 MLX_PACKS = {"qwen3.5-9b": "mlx-community/Qwen3.5-9B-4bit", "qwen3.8-27b": "mlx-community/Qwen3.8-27B-4bit",
@@ -100,7 +171,7 @@ def mlx_lm(model: str, port: int) -> Engine:
     py = os.environ.get("SOLVETIME_MLX_PYTHON", "python3")
     return Engine("mlx-lm", model, path, [py, "-m", "mlx_lm.server", "--model", path, "--port", str(port)],
                   port, path, version_command=[py, "-c", "import mlx_lm; print(mlx_lm.__version__)"],
-                  pack_dir=path if os.path.isdir(path) else None)
+                  pack_dir=path if os.path.isdir(path) else None, info=_files_info)
 
 
 ENGINES = {"raceline": raceline, "kapitsa": kapitsa, "mtplx": mtplx, "mlx-lm": mlx_lm}

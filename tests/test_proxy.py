@@ -10,7 +10,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from solvetime.proxy import Overrides, Proxy  # noqa: E402
-from solvetime.run import looped  # noqa: E402
+from solvetime.run import repeats  # noqa: E402
 
 
 class FakeEngine(http.server.BaseHTTPRequestHandler):
@@ -97,9 +97,20 @@ class ProxyTest(unittest.TestCase):
         self.assertIsNotNone(row["ttft"])
         self.assertEqual(row["completion_tokens"], 3)
 
-    def test_loop_detection(self):
-        self.assertTrue(looped([{"reply": "a"}, {"reply": "b"}, {"reply": "b"}, {"reply": "b"}]))
-        self.assertFalse(looped([{"reply": "a"}, {"reply": "b"}, {"reply": "a"}, {"reply": "b"}]))
+    def test_repeats(self):
+        rows = [{"reply": r} for r in "abacab"]
+        self.assertEqual(repeats(rows, [])["max_reply_repeats"], 3)          # not consecutive, still counted
+
+        def call(i, cmd):
+            return {"role": "assistant", "tool_calls": [{"id": str(i), "function": {
+                "arguments": json.dumps({"command": cmd})}}]}
+
+        def result(i, out):
+            return {"role": "tool", "tool_call_id": str(i), "content": out}
+
+        msgs = [call(1, "ls"), result(1, "a.py"), call(2, "python3 t.py"), result(2, "FAIL"),
+                call(3, "python3 t.py"), result(3, "ok"), call(4, "ls"), result(4, "a.py")]
+        self.assertEqual(repeats([], msgs)["max_action_repeats"], 2)        # the test run changed its output
 
 
 if __name__ == "__main__":

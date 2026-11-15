@@ -23,27 +23,31 @@ def gb(n):
 
 
 def table(root: str) -> str:
-    lines = ["| Model | Engine | Build | Bits per weight | Size | Peak memory | Cold start | Solved | Median time "
-             "| Total time | Tokens written (median) | Requests (median) | Failures | Paged out |",
-             "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    lines = ["| Model | Engine | Build | Bits per weight | Size | Peak memory | Cold start | Solved | Median time, "
+             "solved attempts | Total time per solved task | Total time | Tokens written (median) | Requests (median) "
+             "| Failures | Paged out |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for meta, attempts in runs(root):
         engine = meta["engine"] + (" (ours)" if meta.get("ours") else "") + (f" {meta['version']}" if meta.get("version") else "")
         if meta.get("load_failure"):
             lines.append(f"| {meta['model']} | {engine} | {meta['pack']} | | | | | does not start: "
-                         f"{meta['load_failure']} | | | | | | |")
+                         f"{meta['load_failure']} | | | | | | | |")
             continue
         n = len(attempts)
         solved = sum(a["solved"] for a in attempts)
         secs = [a["seconds"] for a in attempts]
+        solved_secs = [a["seconds"] for a in attempts if a["solved"]]
         toks = [a["completion_tokens"] for a in attempts if a.get("completion_tokens") is not None]
         reqs = [a["requests"] for a in attempts]
         failures = collections.Counter(a["failure"].split(":")[0] for a in attempts if not a["solved"])
         paged = sum(a.get("pageouts_delta") or 0 for a in attempts) * 16384
-        lines.append("| {} | {} | {} | {} | {} | {} | {} | {}/{} | {} | {} | {} | {} | {} | {} |".format(
+        lines.append("| {} | {} | {} | {} | {} | {} | {} | {}/{} | {} | {} | {} | {} | {} | {} | {} |".format(
             meta["model"], engine, meta["pack"], meta.get("bits_per_weight") or "", gb(meta.get("pack_bytes")),
             gb(meta.get("peak_footprint_bytes")),
             f"{meta['cold_start_seconds']:.0f} s" if meta.get("cold_start_seconds") else "",
-            solved, n, f"{statistics.median(secs):.0f} s" if secs else "", f"{sum(secs) / 60:.1f} min" if secs else "",
+            solved, n, f"{statistics.median(solved_secs):.0f} s" if solved_secs else "",
+            f"{sum(secs) / solved:.0f} s" if solved else "nothing solved",
+            f"{sum(secs) / 60:.1f} min" if secs else "",
             f"{statistics.median(toks):.0f}" if toks else "", f"{statistics.median(reqs):.0f}" if reqs else "",
             ", ".join(f"{k} {v}" for k, v in failures.most_common()) or "none", gb(paged) if paged else "none"))
     return "\n".join(lines) + "\n"

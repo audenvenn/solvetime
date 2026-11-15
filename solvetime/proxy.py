@@ -64,7 +64,7 @@ class Meter:
     def take(self) -> list:
         with self.lock:
             rows, self.rows = self.rows, []
-        return [{k: v for k, v in r.items() if not k.startswith("_")} for r in rows]
+        return [{k: v for k, v in r.items() if not k.startswith("_") or k == "_raw"} for r in rows]
 
 
 class Proxy:
@@ -179,6 +179,11 @@ class Proxy:
                 row.update(finish=choice.get("finish_reason"),
                            reply=_fingerprint([message.get("content"), message.get("tool_calls")]),
                            **_usage(reply.get("usage")))
+                # What the engine answered, as it answered: when the agent rejects a reply (no tool call, say),
+                # the reply is not in its trajectory, and this is how a failure is told apart from the engine's
+                # tool-call parsing and from the model's own output.
+                row["_raw"] = {"content": message.get("content"), "reasoning": message.get("reasoning_content"),
+                               "tool_calls": message.get("tool_calls")}
                 for key in ("timings", "metrics", "x_timings"):  # engine-specific timing reports, kept as they are
                     if key in reply:
                         row[key] = reply[key]

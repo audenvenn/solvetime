@@ -220,6 +220,10 @@ def attempt(engine: Engine, proxy: Proxy, task: dict, number: int, out_dir: str,
     seconds = time.monotonic() - t0
     rows = proxy.meter.take()
     after = memory_counters()
+    with open(os.path.join(out_dir, "trajectories", f"{task['name']}.{number}.replies.jsonl"), "w") as f:
+        for r in rows:                       # every reply as the engine sent it, rejected ones included
+            f.write(json.dumps({"seconds": r.get("seconds"), "finish": r.get("finish"), **(r.pop("_raw", None) or {})})
+                    + "\n")
     solved, why = check(task, box)
     box.close()
     rep = repeats(rows, agent.messages)

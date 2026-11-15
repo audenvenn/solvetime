@@ -80,7 +80,9 @@ def groups(root: str, notes: list | None = None):
             continue
         key = (meta["model"], meta["engine"], meta.get("version"), meta["pack"])
         g = out.setdefault(key, {"meta": meta, "attempts": [], "sets": set(), "no_call": 0, "cut_off": 0,
-                                 "replies": 0, "runs": []})
+                                 "replies": 0, "runs": [], "settings": []})
+        if (meta.get("settings") or "defaults") not in g["settings"]:
+            g["settings"].append(meta.get("settings") or "defaults")
         run_dir = meta["_dir"]
         g["runs"].append(os.path.basename(run_dir))
         for a in attempts:
@@ -95,9 +97,10 @@ def groups(root: str, notes: list | None = None):
 
 def pooled_table(root: str, notes: list | None = None) -> str:
     """One row per model and engine build, every task set pooled; engines that were not run, and why."""
-    lines = ["| Model | Engine | Build | Bits per weight | Tasks | Solved | Ended by malformed output | Replies without "
-             "a tool call | Replies cut off at the token limit | Median time, solved attempts | Other failures |",
-             "|---|---|---|---|---|---|---|---|---|---|---|"]
+    lines = ["| Model | Engine | Build | Settings | Bits per weight | Tasks | Solved | Ended by malformed output | "
+             "Replies without a tool call | Replies cut off at the token limit | Median time, solved attempts | "
+             "Other failures |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for (model, engine, version, pack), g in groups(root).items():
         att = g["attempts"]
         n, solved = len(att), sum(a["solved"] for a in att)
@@ -108,13 +111,14 @@ def pooled_table(root: str, notes: list | None = None) -> str:
                                               and a.get("exit_status") == "RepeatedFormatError"))
         secs = [a["seconds"] for a in att if a["solved"]]
         tasks = len({a["task"] for a in att})
-        lines.append(f"| {model} | {engine_name(g['meta'])} | {pack} | {g['meta'].get('bits_per_weight') or ''} | "
+        lines.append(f"| {model} | {engine_name(g['meta'])} | {pack} | {'; '.join(g['settings'])} | "
+                     f"{g['meta'].get('bits_per_weight') or ''} | "
                      f"{tasks} ({', '.join(sorted(g['sets']))}) | {pct(solved, n)} | {malformed}/{n} | "
                      f"{g['no_call']} of {g['replies']} | {g['cut_off']} | "
                      f"{f'{statistics.median(secs):.0f} s' if secs else ''} | "
                      f"{', '.join(f'{k} {v}' for k, v in others.most_common()) or 'none'} |")
     for note in notes or []:
-        lines.append(f"| {note['model']} | {note['engine']} {note.get('version', '')} | {note.get('pack', '')} | "
+        lines.append(f"| {note['model']} | {note['engine']} {note.get('version', '')} | {note.get('pack', '')} | | "
                      f"{note.get('bits_per_weight', '')} | | not run: {note['result']} | | | | | {note['why']} |")
     return "\n".join(lines) + "\n"
 
@@ -145,15 +149,15 @@ def pairwise_table(root: str) -> str:
 
 
 def table(root: str) -> str:
-    lines = ["| Model | Engine | Build | Bits per weight | Size | Peak footprint | Cold start | Solved | Median time, "
+    lines = ["| Model | Engine | Build | Settings | Bits per weight | Size | Peak footprint | Cold start | Solved | Median time, "
              "solved attempts | Total time per solved task | Total time | Tokens written (median) | Requests (median) "
              "| Failures | Paged out |",
-             "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+             "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for meta, attempts in runs(root):
         engine = engine_name(meta)
         if meta.get("load_failure"):
-            lines.append(f"| {meta['model']} | {engine} | {meta['pack']} | | | | | does not start: "
-                         f"{meta['load_failure']} | | | | | | | |")
+            lines.append(f"| {meta['model']} | {engine} | {meta['pack']} | {meta.get('settings') or 'defaults'} | | | | | "
+                         f"does not start: {meta['load_failure']} | | | | | | | |")
             continue
         n = len(attempts)
         solved = sum(a["solved"] for a in attempts)
@@ -163,8 +167,9 @@ def table(root: str) -> str:
         reqs = [a["requests"] for a in attempts]
         failures = collections.Counter(a["failure"].split(":")[0] for a in attempts if not a["solved"])
         paged = sum(a.get("pageouts_delta") or 0 for a in attempts) * 16384
-        lines.append("| {} | {} | {} | {} | {} | {} | {} | {}/{} | {} | {} | {} | {} | {} | {} | {} |".format(
-            meta["model"], engine, meta["pack"], meta.get("bits_per_weight") or "", gb(meta.get("pack_bytes")),
+        lines.append("| {} | {} | {} | {} | {} | {} | {} | {} | {}/{} | {} | {} | {} | {} | {} | {} | {} |".format(
+            meta["model"], engine, meta["pack"], meta.get("settings") or "defaults", meta.get("bits_per_weight") or "",
+            gb(meta.get("pack_bytes")),
             gb(meta.get("peak_footprint_bytes")),
             f"{meta['cold_start_seconds']:.0f} s" if meta.get("cold_start_seconds") else "",
             solved, n, f"{statistics.median(solved_secs):.0f} s" if solved_secs else "",

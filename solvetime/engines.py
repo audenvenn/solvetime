@@ -33,6 +33,7 @@ class Engine:
     version_command: list[str] = field(default_factory=list)
     pack_dir: str | None = None     # where the build's files are, for its size
     ours: bool = False              # raceline: the author's own engine, labelled as such
+    settings: str = ""              # runtime options beyond the defaults, as passed (shown in the tables)
 
     def version(self) -> str:
         if not self.version_command:
@@ -126,10 +127,13 @@ def raceline(model: str, port: int) -> Engine:
     # (the other engines default to 16K-256K on a 24 GB Mac). The 27B keeps 32768: its weights leave no room
     # for a 65536-token cache on 24 GB. The longest conversation in the core tasks is about 13K tokens.
     ctx = os.environ.get("SOLVETIME_RACELINE_CTX", "32768" if model == "qwen3.8-27b" else "65536")
+    # Extra server options (e.g. "--expert-cache 8": 8 GB of experts in memory, the rest read from the SSD),
+    # kept in the command and shown as the run's settings. The build stays the same.
+    extra = os.environ.get("SOLVETIME_RACELINE_ARGS", "").split()
     return Engine("raceline", model, f"{alias} (FP4, 4.0 bits, with its MTP head)",
-                  [exe, "serve", target, "--port", str(port), "--ctx", ctx],
+                  [exe, "serve", target, "--port", str(port), "--ctx", ctx, *extra],
                   port, alias, version_command=[os.path.join(os.path.dirname(exe), "python"), "-c", RACELINE_VERSION],
-                  pack_dir=os.environ.get("SOLVETIME_RACELINE_FILE"), ours=True)
+                  pack_dir=os.environ.get("SOLVETIME_RACELINE_FILE"), ours=True, settings=" ".join(extra))
 
 
 def _kapitsa_info(engine: Engine) -> dict:

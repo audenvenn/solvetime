@@ -158,7 +158,7 @@ def main(argv=None):
     os.makedirs(args.out, exist_ok=True)
     path = os.path.join(args.out, time.strftime("speed-%Y%m%d-%H%M%S") + f"-{engine.name}-{args.model}.jsonl")
     meta = {"engine": engine.name, "ours": engine.ours, "version": engine.version(), "model": args.model,
-            "pack": engine.pack, "command": engine.command, **calibrate()}
+            "pack": engine.pack, "settings": engine.settings, "command": engine.command, **calibrate()}
     out = open(path, "w")
     log = open(path.replace(".jsonl", ".engine.log"), "w")
     meta["available_before_start"] = system_available()   # before the engine starts: the baseline

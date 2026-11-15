@@ -111,8 +111,9 @@ def raceline(model: str, port: int) -> Engine:
     exe = os.environ.get("SOLVETIME_RACELINE", shutil.which("raceline") or "raceline")
     target = os.environ.get("SOLVETIME_RACELINE_FILE", alias)   # a pulled model's name, or its .rlm file
     # The server's default window is 32768 tokens; an agent's conversation can outgrow it, so 65536 here
-    # (the other engines default to 96K-256K on this Mac).
-    ctx = os.environ.get("SOLVETIME_RACELINE_CTX", "65536")
+    # (the other engines default to 16K-256K on a 24 GB Mac). The 27B keeps 32768: its weights leave no room
+    # for a 65536-token cache on 24 GB. The longest conversation in the core tasks is about 13K tokens.
+    ctx = os.environ.get("SOLVETIME_RACELINE_CTX", "32768" if model == "qwen3.8-27b" else "65536")
     return Engine("raceline", model, f"{alias} (FP4, 4.0 bits, with its MTP head)",
                   [exe, "serve", target, "--port", str(port), "--ctx", ctx],
                   port, alias, version_command=[os.path.join(os.path.dirname(exe), "python"), "-c",
@@ -175,7 +176,11 @@ MLX_PACKS = {"qwen3.5-9b": "mlx-community/Qwen3.5-9B-4bit", "qwen3.8-27b": "mlx-
 def mlx_lm(model: str, port: int) -> Engine:
     path = os.environ.get("SOLVETIME_MLX_MODEL", MLX_PACKS[model])
     py = os.environ.get("SOLVETIME_MLX_PYTHON", "python3")
-    return Engine("mlx-lm", model, path, [py, "-m", "mlx_lm.server", "--model", path, "--port", str(port)],
+    # One cached prompt: a single user's agent only ever extends its one conversation. The server's default keeps
+    # the KV caches of several earlier prompts, and with the 27B's 15 GB of weights those outgrow the GPU memory
+    # of a 24 GB Mac: the next 4K-token prompt fails with "Insufficient Memory" and the server stops generating.
+    return Engine("mlx-lm", model, path, [py, "-m", "mlx_lm.server", "--model", path, "--port", str(port),
+                                          "--prompt-cache-size", "1"],
                   port, path, version_command=[py, "-c", "import mlx_lm; print(mlx_lm.__version__)"],
                   pack_dir=path if os.path.isdir(path) else None, info=_files_info)
 

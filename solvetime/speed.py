@@ -183,25 +183,36 @@ def main(argv=None):
             out.flush()
             print({k: (round(v, 2) if isinstance(v, float) else v) for k, v in row.items()}, flush=True)
 
-        stream(engine.port, engine.api_model, [{"role": "user", "content": PROMPTS["write"]}], 64, 0.6)  # warm
-        for _ in range(args.runs):
-            content = f"Request {uuid.uuid4().hex}.\n\n{body}\n\nIn one sentence: what does the code above do?"
-            ttft, _, _, usage = stream(engine.port, engine.api_model, [{"role": "user", "content": content}], 1, 0.0)
-            n = usage.get("prompt_tokens") or len(tok.encode(content).ids) + 10
-            record(test="prefill", prompt_tokens=n, ttft_s=ttft, prefill_tok_s=n / ttft)
-        for name, prompt in PROMPTS.items():
-            for temperature in (0.6, 0.0):
-                for _ in range(args.runs):
-                    content = prompt if name == "continue" else f"Request {uuid.uuid4().hex}. {prompt}"
-                    with MemorySampler(proc.pid) as mem:
-                        ttft, span, text, usage = stream(engine.port, engine.api_model,
-                                                         [{"role": "user", "content": content}], 512, temperature)
-                    n = len(tok.encode(text).ids)
-                    record(test=f"decode {name} T={temperature}", completion_tokens=n,
-                           engine_completion_tokens=usage.get("completion_tokens"), ttft_s=ttft,
-                           decode_tok_s=(n - 1) / span if span else None, rss_peak_bytes=mem.rss,
-                           footprint_peak_bytes=mem.footprint,
-                           system_taken_bytes=meta["available_before_start"] - mem.available_min)
+        test = "warm-up"
+        try:
+            stream(engine.port, engine.api_model, [{"role": "user", "content": PROMPTS["write"]}], 64, 0.6)
+            test = "prefill"
+            for _ in range(args.runs):
+                content = f"Request {uuid.uuid4().hex}.\n\n{body}\n\nIn one sentence: what does the code above do?"
+                ttft, _, _, usage = stream(engine.port, engine.api_model, [{"role": "user", "content": content}], 1, 0.0)
+                n = usage.get("prompt_tokens") or len(tok.encode(content).ids) + 10
+                record(test="prefill", prompt_tokens=n, ttft_s=ttft, prefill_tok_s=n / ttft)
+            for name, prompt in PROMPTS.items():
+                for temperature in (0.6, 0.0):
+                    test = f"decode {name} T={temperature}"
+                    for _ in range(args.runs):
+                        content = prompt if name == "continue" else f"Request {uuid.uuid4().hex}. {prompt}"
+                        with MemorySampler(proc.pid) as mem:
+                            ttft, span, text, usage = stream(engine.port, engine.api_model,
+                                                             [{"role": "user", "content": content}], 512, temperature)
+                        n = len(tok.encode(text).ids)
+                        record(test=test, completion_tokens=n,
+                               engine_completion_tokens=usage.get("completion_tokens"), ttft_s=ttft,
+                               decode_tok_s=(n - 1) / span if span else None, rss_peak_bytes=mem.rss,
+                               footprint_peak_bytes=mem.footprint,
+                               system_taken_bytes=meta["available_before_start"] - mem.available_min)
+        except (RuntimeError, OSError, http.client.HTTPException) as e:
+            # The engine stopped answering (out of GPU memory, usually): say so, with the end of its log, and
+            # measure nothing more of it.
+            log.flush()
+            tail = open(log.name, errors="replace").read().splitlines()[-12:]
+            record(test="failure", during=test, error=f"{type(e).__name__}: {e}"[:300], engine_alive=proc.poll() is None,
+                   engine_log_tail=[line[-300:] for line in tail])
     finally:
         if proc.poll() is None:
             os.killpg(proc.pid, signal.SIGTERM)
@@ -216,18 +227,19 @@ def main(argv=None):
 def table(paths: list[str]) -> str:
     """Markdown: one row per engine and model, medians with ranges."""
     lines = ["| Model | Engine | Bits per weight | Prefill 4K | Write T 0.6 | Write T 0 | Continue T 0.6 | Continue T 0 "
-             "| Memory taken (system) | RSS | Footprint |", "|---|---|---|---|---|---|---|---|---|---|---|"]
+             "| Memory taken (system) | RSS | Footprint | Notes |", "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for p in paths:
         rows = [json.loads(line) for line in open(p)]
         meta = next((r for r in rows if r["test"] in ("meta", "load")), {})
         if meta.get("load_failure"):
-            lines.append(f"| {meta['model']} | {meta['engine']} | | does not start: {meta['load_failure']} | | | | | | |")
+            lines.append(f"| {meta['model']} | {meta['engine']} | | | | | | | | | | does not start: {meta['load_failure']} |")
             continue
 
         def cell(test, key, fmt):
             vals = [r[key] for r in rows if r["test"] == test and r.get(key)]
             return f"{fmt.format(statistics.median(vals))} ({fmt.format(min(vals))}-{fmt.format(max(vals))})" if vals else ""
 
+        failed = next((r for r in rows if r["test"] == "failure"), None)
         rss = max((r.get("rss_peak_bytes") or 0 for r in rows), default=0)
         fp = max((r.get("footprint_peak_bytes") or 0 for r in rows), default=0)
         taken = max((r.get("system_taken_bytes") or 0 for r in rows), default=0)
@@ -235,7 +247,8 @@ def table(paths: list[str]) -> str:
         lines.append(f"| {meta.get('model')} | {name} {meta.get('version', '')} | {meta.get('bits_per_weight') or ''} "
                      f"| {cell('prefill', 'prefill_tok_s', '{:.0f}')} | "
                      + " | ".join(cell(f"decode {n} T={t}", "decode_tok_s", "{:.1f}") for n in PROMPTS for t in (0.6, 0.0))
-                     + f" | {taken / 1e9:.1f} GB | {rss / 1e9:.1f} GB | {fp / 1e9:.1f} GB |")
+                     + "".join(f" | {n / 1e9:.1f} GB" if n else " | " for n in (taken, rss, fp)) + " | "
+                     + (f"stopped during {failed['during']}: {failed['error']}" if failed else "") + " |")
     return "\n".join(lines) + "\n"
 
 

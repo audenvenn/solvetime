@@ -139,14 +139,15 @@ def raceline(model: str, port: int) -> Engine:
 def _kapitsa_info(engine: Engine) -> dict:
     """The variant kapitsa resolves on this Mac, its folder, and the weights and formats `kapitsa doctor` lists."""
     key = engine.command[engine.command.index("--model") + 1]
-    dry = subprocess.run(["kapitsa", "pull", "--dry-run", key], capture_output=True, text=True, timeout=120).stdout
+    exe = engine.command[0]
+    dry = subprocess.run([exe, "pull", "--dry-run", key], capture_output=True, text=True, timeout=120).stdout
     m = re.search(r"folder:\s+(\S+)", dry)
     folder = os.path.expanduser(m.group(1)) if m else None
     variant = re.search(r"variant:\s+(.+)", dry)
     engine.pack_dir = folder
     out = {"pack": f"kapitsa {key}: {os.path.basename(folder) if folder else '?'}", "pack_bytes": engine.pack_bytes(),
            "variant": variant.group(1).strip() if variant else None}
-    doctor = subprocess.run(["kapitsa", "doctor"], capture_output=True, text=True, timeout=300).stdout
+    doctor = subprocess.run([exe, "doctor"], capture_output=True, text=True, timeout=300).stdout
     name = os.path.basename(folder) if folder else ""
     block = re.search(rf"^  {re.escape(name)}[ ,(].*?(?=^  \S|\Z)", doctor, re.M | re.S) if name else None
     if block:
@@ -163,13 +164,19 @@ def _kapitsa_info(engine: Engine) -> dict:
 
 def kapitsa(model: str, port: int) -> Engine:
     key = {"qwen3.6-35b-a3b": "35b", "qwen3.8-27b": "27b", "qwen3.5-9b": "9b"}[model]
+    # SOLVETIME_KAPITSA: another kapitsa binary, e.g. a build of main (its version names the commit); the models
+    # are shared (~/.cache/kapitsa/models)
+    exe = os.environ.get("SOLVETIME_KAPITSA", "kapitsa")
     return Engine("kapitsa", model, f"kapitsa {key} (the variant `kapitsa doctor` plans for this Mac)",
-                  ["kapitsa", "serve", "--model", key, "--port", str(port), "--private", "--local"],
+                  [exe, "serve", "--model", key, "--port", str(port), "--private", "--local"],
                   port, {"35b": "qwen3.6-35b-a3b", "27b": "qwen3.8-27b", "9b": "qwen3.5-9b"}[key],
-                  version_command=["kapitsa", "--version"], info=_kapitsa_info)
+                  version_command=[exe, "--version"], info=_kapitsa_info)
 
 
-MTPLX_PACKS = {  # the catalog's recommendation for a 24 GB Mac where it has one (README, "Models and recommended settings")
+# The same checkpoint as the other engines, in the pack MTPLX's catalog rates as fitting a 24 GB Mac (27B: Bare Speed,
+# "tight_fit"; the catalog's "recommended" 24 GB pick, Ternary Bonsai 2 27B, is a different model). No 35B pack fits
+# (insufficient_memory; see the results' not-run notes): that entry is for larger Macs.
+MTPLX_PACKS = {
     "qwen3.5-9b": "Youssofal/Qwen3.5-9B-MTPLX-Optimized-Speed",
     "qwen3.8-27b": "Youssofal/Qwen3.8-27B-MTPLX-Bare-Speed",
     "qwen3.6-35b-a3b": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed",

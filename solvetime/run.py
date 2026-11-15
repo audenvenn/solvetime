@@ -278,7 +278,7 @@ def main(argv=None):
     out_dir = os.path.join(args.out, run_id)
     os.makedirs(os.path.join(out_dir, "trajectories"), exist_ok=True)
     meta = {"engine": engine.name, "ours": engine.ours, "version": engine.version(), "model": args.model,
-            "pack": engine.pack, "command": engine.command, "thinking": args.thinking,
+            "pack": engine.pack, "settings": engine.settings, "command": engine.command, "thinking": args.thinking,
             "sampling": SAMPLING[args.thinking].__dict__, "agent": "mini-swe-agent " + _mini_version(),
             "step_limit": STEP_LIMIT, "wall_seconds": WALL_SECONDS, "mac": _mac(), "started": time.strftime("%F %T"),
             "tasks": names, "attempts": args.attempts, **calibrate(), "memory_before": memory_counters()}

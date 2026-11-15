@@ -37,6 +37,26 @@ users get; the build's name and size are part of every result. "Does not fit in 
 - Disclosure: the author also maintains [raceline](https://github.com/audenvenn/raceline), one of the engines
   measured. It is labelled in every table, and its results are reported like any other's.
 
+## How it is measured
+
+- **Each engine as its users get it**: the build the engine recommends or picks for the Mac at hand, with
+  its default settings. No engine is tuned beyond what its documentation tells users to do.
+- **The agent is sandboxed**: its shell commands may write only inside the attempt's own directory and
+  have no network, so it can neither damage the machine nor look answers up.
+- **Warm before measuring**: one uncounted request after the server starts, so loading weights and
+  compiling kernels don't land in the first task. Cold start is reported separately.
+- **Attempts run round-robin** (every task once, then every task again), so no engine gets an
+  unrealistically warm cache from repeating the same task back to back. Reusing the agent's system
+  prompt across tasks is real-world behaviour and allowed.
+- **Speed comes from a separate test**, a 4K-token prompt and a 512-token coding answer. The proxy
+  passes the agent's requests through unchanged instead of converting them to streaming, because that
+  would change how engines answer.
+- **Memory**: the engine's peak physical footprint, plus whether the Mac swapped during the run. The
+  footprint leaves out memory-mapped weight files, so the build's size is shown next to it.
+- **Same rules for all**: tasks, prompts, the model card's sampling settings, thinking on or off, a
+  50-step limit and a 15-minute wall-time limit per attempt. Which settings each engine actually
+  honours is checked and recorded.
+
 ## Results
 
 Coming: Qwen3.6-35B-A3B and Qwen3.8-27B on a Mac mini M6 (24 GB), across the engines above.

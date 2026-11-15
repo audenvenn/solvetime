@@ -110,7 +110,11 @@ def raceline(model: str, port: int) -> Engine:
     alias = {"qwen3.6-35b-a3b": "qwen3.6-35b-a3b", "qwen3.8-27b": "qwen3.8-27b", "qwen3.5-9b": "qwen3.5-9b"}[model]
     exe = os.environ.get("SOLVETIME_RACELINE", shutil.which("raceline") or "raceline")
     target = os.environ.get("SOLVETIME_RACELINE_FILE", alias)   # a pulled model's name, or its .rlm file
-    return Engine("raceline", model, f"{alias} (FP4, 4.0 bits, with its MTP head)", [exe, "serve", target, "--port", str(port)],
+    # The server's default window is 32768 tokens; an agent's conversation can outgrow it, so 65536 here
+    # (the other engines default to 96K-256K on this Mac).
+    ctx = os.environ.get("SOLVETIME_RACELINE_CTX", "65536")
+    return Engine("raceline", model, f"{alias} (FP4, 4.0 bits, with its MTP head)",
+                  [exe, "serve", target, "--port", str(port), "--ctx", ctx],
                   port, alias, version_command=[os.path.join(os.path.dirname(exe), "python"), "-c",
                                                 "import raceline; print('raceline', raceline.__version__)"],
                   pack_dir=os.environ.get("SOLVETIME_RACELINE_FILE"), ours=True)
@@ -186,7 +190,7 @@ def llama_cpp(model: str, port: int) -> Engine:
     """llama.cpp's llama-server on a GGUF (SOLVETIME_GGUF), all layers on the GPU, flash attention, the model's
     own chat template, and its MTP head as the drafter (--spec-type draft-mtp) when the GGUF carries one."""
     gguf = os.environ.get("SOLVETIME_GGUF", "")
-    ctx = os.environ.get("SOLVETIME_LLAMA_CTX", "32768")
+    ctx = os.environ.get("SOLVETIME_LLAMA_CTX", "65536")
     command = ["llama-server", "-m", gguf, "--port", str(port), "--host", "127.0.0.1", "-ngl", "999", "-fa", "on",
                "--jinja", "-c", ctx]
     if os.environ.get("SOLVETIME_LLAMA_SPEC", "draft-mtp") != "none":

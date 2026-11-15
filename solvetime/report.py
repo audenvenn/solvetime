@@ -52,8 +52,13 @@ def table(root: str) -> str:
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="solvetime report", description=__doc__)
     ap.add_argument("results")
+    ap.add_argument("--speed", action="store_true", help="the speed results (speed-*.jsonl) instead of the agent runs")
     args = ap.parse_args(argv)
-    print(table(args.results), end="")
+    if args.speed:
+        from .speed import table as speed_table
+        print(speed_table(sorted(glob.glob(os.path.join(args.results, "speed-*.jsonl")))), end="")
+    else:
+        print(table(args.results), end="")
 
 
 if __name__ == "__main__":

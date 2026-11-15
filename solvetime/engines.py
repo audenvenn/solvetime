@@ -106,6 +106,18 @@ def bits(weights_bytes: int | None, model: str) -> float | None:
     return round(8 * weights_bytes / PARAMS[model], 2) if weights_bytes and model in PARAMS else None
 
 
+# The package version, and the commit when raceline runs from a git checkout (where the version alone names
+# the last release, not what was measured).
+RACELINE_VERSION = """
+import os, subprocess, raceline
+d = os.path.dirname(raceline.__file__)
+git = lambda *a: subprocess.run(["git", "-C", d, *a], capture_output=True, text=True)
+tracked = git("ls-files", "--error-unmatch", "__init__.py").returncode == 0
+build = git("describe", "--tags", "--always", "--dirty").stdout.strip() if tracked else ""
+print("raceline", raceline.__version__ + (f" ({build})" if build else ""))
+"""
+
+
 def raceline(model: str, port: int) -> Engine:
     alias = {"qwen3.6-35b-a3b": "qwen3.6-35b-a3b", "qwen3.8-27b": "qwen3.8-27b", "qwen3.5-9b": "qwen3.5-9b"}[model]
     exe = os.environ.get("SOLVETIME_RACELINE", shutil.which("raceline") or "raceline")
@@ -116,8 +128,7 @@ def raceline(model: str, port: int) -> Engine:
     ctx = os.environ.get("SOLVETIME_RACELINE_CTX", "32768" if model == "qwen3.8-27b" else "65536")
     return Engine("raceline", model, f"{alias} (FP4, 4.0 bits, with its MTP head)",
                   [exe, "serve", target, "--port", str(port), "--ctx", ctx],
-                  port, alias, version_command=[os.path.join(os.path.dirname(exe), "python"), "-c",
-                                                "import raceline; print('raceline', raceline.__version__)"],
+                  port, alias, version_command=[os.path.join(os.path.dirname(exe), "python"), "-c", RACELINE_VERSION],
                   pack_dir=os.environ.get("SOLVETIME_RACELINE_FILE"), ours=True)
 
 

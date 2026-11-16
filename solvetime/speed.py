@@ -41,10 +41,18 @@ PROMPTS = {
     "write": ("Write a complete Python module that implements a thread-safe LRU cache with per-entry time-to-live "
               "expiry. Include type hints, docstrings, and a unittest test suite with at least ten tests. Output only "
               "the code."),
-    "continue": ("Continue this Python module. Output only code.\n\nfrom __future__ import annotations\n\nimport csv\n"
-                 "import statistics\nfrom dataclasses import dataclass, field\nfrom pathlib import Path\n\n\n@dataclass\n"
-                 "class Sample:\n    name: str\n    values: list[float] = field(default_factory=list)\n\n    def mean(self) "
-                 "-> float:\n        return statistics.fmean(self.values)\n\n    def stdev(self) -> float:\n"),
+    # A continuation that cannot end early: the docstring lists twenty functions and two are written, so
+    # writing the rest takes well over 512 tokens (the first prompt of this kind, which ended a single
+    # function, came back after 9 to 26 tokens with thinking off).
+    "continue": ("Continue this Python module: implement, in order, every function its docstring lists that is not "
+                 "written yet. Output only code.\n\n"
+                 '"""Small helpers for lists of numbers.\n\nFunctions: mean, median, mode, variance, stdev, minimum, '
+                 "maximum, value_range, clamp, normalize, moving_average, cumulative_sum, differences, percentile, "
+                 'zscores, histogram, deduplicate, chunks, interleave, rotate.\n"""\n\n'
+                 "from __future__ import annotations\n\nimport math\nfrom collections import Counter\n\n\n"
+                 "def mean(xs: list[float]) -> float:\n    \"\"\"The arithmetic mean.\"\"\"\n    return sum(xs) / len(xs)\n\n\n"
+                 "def median(xs: list[float]) -> float:\n    \"\"\"The middle value, or the mean of the two middle values.\"\"\"\n"
+                 "    s = sorted(xs)\n    n = len(s)\n    return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2\n\n\n"),
 }
 SAMPLING = {0.6: {"top_p": 0.95, "top_k": 20}, 0.0: {}}
 
@@ -240,7 +248,10 @@ def table(paths: list[str]) -> str:
             continue
 
         def cell(test, key, fmt):
-            vals = [r[key] for r in rows if r["test"] == test and r.get(key)]
+            vals = [r[key] for r in rows if r["test"] == test and r.get(key)
+                    and (key != "decode_tok_s" or (r.get("completion_tokens") or 0) >= 256)]
+            if not vals and any(r["test"] == test for r in rows):
+                return "too short to time"
             return f"{fmt.format(statistics.median(vals))} ({fmt.format(min(vals))}-{fmt.format(max(vals))})" if vals else ""
 
         failed = next((r for r in rows if r["test"] == "failure"), None)

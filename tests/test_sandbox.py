@@ -42,6 +42,19 @@ class SandboxTest(unittest.TestCase):
             self.assertNotEqual(out["returncode"], 0, path)
             self.assertIn("not permitted", out["output"].lower(), path)
 
+    def test_home_and_the_way_to_the_task_python_cannot_be_listed(self):
+        # The directories between the home directory and the task Python stay traversable (metadata only),
+        # so that the interpreter finds itself; their contents cannot be listed.
+        from solvetime.sandbox import TASK_VENV
+        d, dirs = os.path.dirname(os.path.realpath(TASK_VENV)), []
+        while d.startswith(HOME):
+            dirs.append(d)
+            d = os.path.dirname(d)
+        for path in dirs:
+            out = self.sh(f"ls {path}")
+            self.assertNotEqual(out["returncode"], 0, path)
+            self.assertIn("not permitted", out["output"].lower(), path)
+
     def test_no_network(self):
         out = self.sh("python3 -c \"import urllib.request; urllib.request.urlopen('http://example.com', timeout=5)\"")
         self.assertNotEqual(out["returncode"], 0)

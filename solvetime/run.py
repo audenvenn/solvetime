@@ -26,10 +26,11 @@ import platform
 import re
 import signal
 import subprocess
+import sys
 import time
 import urllib.request
 
-from .engines import ENGINES, Engine
+from .engines import ENGINES, Engine, missing
 from .proxy import Overrides, Proxy
 from .sandbox import Sandbox, SandboxedEnvironment
 from .tasks import TASKS
@@ -273,6 +274,9 @@ def main(argv=None):
 
     os.environ.setdefault("MSWEA_COST_TRACKING", "ignore_errors")
     engine = ENGINES[args.engine](args.model, args.port)
+    problem = missing(engine)
+    if problem:
+        sys.exit(problem)
     names = args.tasks.split(",") if args.tasks else [n for n, t in TASKS.items() if args.set in ("all", t["group"])]
     run_id = time.strftime("%Y%m%d-%H%M%S") + f"-{engine.name}-{args.model}"
     out_dir = os.path.join(args.out, run_id)

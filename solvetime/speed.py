@@ -160,6 +160,8 @@ def main(argv=None):
     ap.add_argument("--runs", type=int, default=3)
     ap.add_argument("--port", type=int, default=8891)
     ap.add_argument("--out", default="results")
+    ap.add_argument("--note", default="", help="the conditions of this measurement, shown in the table "
+                    "(e.g. \"experts cached\")")
     args = ap.parse_args(argv)
 
     engine = ENGINES[args.engine](args.model, args.port)
@@ -170,7 +172,8 @@ def main(argv=None):
     os.makedirs(args.out, exist_ok=True)
     path = os.path.join(args.out, time.strftime("speed-%Y%m%d-%H%M%S") + f"-{engine.name}-{args.model}.jsonl")
     meta = {"engine": engine.name, "ours": engine.ours, "version": engine.version(), "model": args.model,
-            "pack": engine.pack, "settings": engine.settings, "command": engine.command, "harness": harness_version(), **calibrate()}
+            "pack": engine.pack, "settings": engine.settings, "command": engine.command, "harness": harness_version(),
+            "note": args.note, **calibrate()}
     out = open(path, "w")
     log = open(path.replace(".jsonl", ".engine.log"), "w")
     meta["available_before_start"] = system_available()   # before the engine starts: the baseline
@@ -263,7 +266,8 @@ def table(paths: list[str]) -> str:
                      f"| {cell('prefill', 'prefill_tok_s', '{:.0f}')} | "
                      + " | ".join(cell(f"decode {n} T={t}", "decode_tok_s", "{:.1f}") for n in PROMPTS for t in (0.6, 0.0))
                      + "".join(f" | {n / 1e9:.1f} GB" if n else " | " for n in (taken, rss, fp)) + " | "
-                     + (f"stopped during {failed['during']}: {failed['error']}" if failed else "") + " |")
+                     + "; ".join(x for x in (meta.get("note"), f"stopped during {failed['during']}: {failed['error']}"
+                                             if failed else "") if x) + " |")
     return "\n".join(lines) + "\n"
 
 

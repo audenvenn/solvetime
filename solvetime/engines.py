@@ -15,6 +15,7 @@ import importlib.util
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -36,6 +37,11 @@ class Engine:
     pack_dir: str | None = None     # where the build's files are, for its size
     ours: bool = False              # raceline: the author's own engine, labelled as such
     settings: str = ""              # runtime options beyond the defaults, as passed (shown in the tables)
+    clear_env: str = ""             # a prefix: the user's own variables with it are not passed to the server
+
+    def server_env(self) -> dict:
+        base = {k: v for k, v in os.environ.items() if not (self.clear_env and k.startswith(self.clear_env))}
+        return dict(base, **self.env)
 
     def version(self) -> str:
         if not self.version_command:
@@ -240,7 +246,52 @@ def llama_cpp(model: str, port: int) -> Engine:
                   pack_dir=gguf or None, info=_gguf_info)
 
 
-ENGINES = {"raceline": raceline, "kapitsa": kapitsa, "mtplx": mtplx, "mlx-lm": mlx_lm, "llama.cpp": llama_cpp}
+# Ollama's own default tag for each model (ollama.com/library): its q4_K_M GGUF, as `ollama run` pulls it.
+OLLAMA_TAGS = {"qwen3.6-35b-a3b": "qwen3.6:35b-a3b", "qwen3.8-27b": "qwen3.8:27b", "qwen3.5-9b": "qwen3.5:9b"}
+
+
+def _ollama_models() -> str:
+    return os.environ.get("OLLAMA_MODELS", os.path.join(HOME, ".ollama", "models"))
+
+
+def _ollama_manifest(tag: str) -> str:
+    name, _, version = tag.partition(":")
+    if "/" not in name:
+        name = "library/" + name
+    return os.path.join(_ollama_models(), "manifests", "registry.ollama.ai", name, version or "latest")
+
+
+def _ollama_info(engine: "Engine") -> dict:
+    """The tag's size (its blobs, from the manifest) and bits per weight."""
+    try:
+        manifest = json.load(open(_ollama_manifest(engine.api_model)))
+        size = sum(layer.get("size", 0) for layer in manifest.get("layers", [])
+                   if layer.get("mediaType", "").endswith(".model"))
+    except (OSError, ValueError):
+        return {}
+    return {"pack_bytes": size, "weights_bytes": size, "bits_per_weight": bits(size, engine.model)}
+
+
+def ollama(model: str, port: int) -> Engine:
+    """A dedicated `ollama serve` on its own port, over the user's model store, so the desktop app's settings
+    and loaded models stay out. The tag as Ollama ships it (SOLVETIME_OLLAMA_TAG for another). Its context
+    window: 65536 tokens, as llama.cpp gets here; Ollama's own default depends on the GPU's memory and can be
+    4096, which an agent's conversation outgrows without an error (the oldest messages are cut)."""
+    exe = os.environ.get("SOLVETIME_OLLAMA", shutil.which("ollama") or "ollama")
+    tag = os.environ.get("SOLVETIME_OLLAMA_TAG", OLLAMA_TAGS[model])
+    ctx = os.environ.get("SOLVETIME_OLLAMA_CTX", "65536")
+    return Engine("ollama", model, tag, [exe, "serve"], port, tag, health_path="/api/version",
+                  env={"OLLAMA_HOST": f"127.0.0.1:{port}", "OLLAMA_CONTEXT_LENGTH": ctx, "OLLAMA_NOPRUNE": "1",
+                       "OLLAMA_KEEP_ALIVE": "-1"},
+                  # "ollama version is X" with a server running, "Warning: client version is X" without
+                  version_command=["sh", "-c", f"{shlex.quote(exe)} --version 2>&1 | sed -n -E "
+                                   "'s/.*(client )?version is /ollama /p' | head -1"],
+                  info=_ollama_info, settings=f"context {ctx}",
+                  clear_env="OLLAMA_")
+
+
+ENGINES = {"raceline": raceline, "kapitsa": kapitsa, "mtplx": mtplx, "mlx-lm": mlx_lm, "llama.cpp": llama_cpp,
+           "ollama": ollama}
 
 INSTALL = {
     "raceline": "pip install git+https://github.com/audenvenn/raceline (Apple M5 or later), then `raceline pull <model>`; "
@@ -249,6 +300,7 @@ INSTALL = {
     "mtplx": "pip install mtplx; or point SOLVETIME_MTPLX at its `mtplx` command",
     "mlx-lm": "pip install mlx-lm beside solvetime; or set SOLVETIME_MLX_PYTHON to a Python that has it",
     "llama.cpp": "brew install llama.cpp",
+    "ollama": "brew install ollama (or the Ollama app); then `ollama pull <tag>` with a server running",
 }
 
 
@@ -267,6 +319,8 @@ def missing(engine: Engine) -> str | None:
         return f"{engine.name}: `{exe}` not found. Install it: {INSTALL[engine.name]}"
     if engine.name == "mlx-lm" and subprocess.run([exe, "-c", "import mlx_lm"], capture_output=True).returncode:
         return f"mlx-lm: {exe} cannot import mlx_lm. {INSTALL['mlx-lm']}"
+    if engine.name == "ollama" and not os.path.isfile(_ollama_manifest(engine.api_model)):
+        return f"ollama: {engine.api_model} is not pulled. `ollama pull {engine.api_model}` (with `ollama serve` running)"
     if engine.name == "llama.cpp":
         gguf = os.environ.get("SOLVETIME_GGUF", "")
         if not os.path.isfile(gguf):

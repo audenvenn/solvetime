@@ -261,8 +261,8 @@ def table(paths: list[str]) -> str:
         rss = max((r.get("rss_peak_bytes") or 0 for r in rows), default=0)
         fp = max((r.get("footprint_peak_bytes") or 0 for r in rows), default=0)
         taken = max((r.get("system_taken_bytes") or 0 for r in rows), default=0)
-        name = meta.get("engine", "") + (" (ours)" if meta.get("ours") else "")
-        lines.append(f"| {meta.get('model')} | {name} {meta.get('version', '')} | {meta.get('bits_per_weight') or ''} "
+        from .report import engine_name
+        lines.append(f"| {meta.get('model')} | {engine_name(meta)} | {meta.get('bits_per_weight') or ''} "
                      f"| {cell('prefill', 'prefill_tok_s', '{:.0f}')} | "
                      + " | ".join(cell(f"decode {n} T={t}", "decode_tok_s", "{:.1f}") for n in PROMPTS for t in (0.6, 0.0))
                      + "".join(f" | {n / 1e9:.1f} GB" if n else " | " for n in (taken, rss, fp)) + " | "

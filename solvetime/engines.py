@@ -11,6 +11,7 @@ qwen3.5-9b. `pack()` maps that name to the engine's own build.
 
 from __future__ import annotations
 
+import glob
 import importlib.util
 import json
 import os
@@ -297,20 +298,27 @@ LMSTUDIO_MODELS = {"qwen3.6-35b-a3b": "qwen/qwen3.6-35b-a3b", "qwen3.8-27b": "qw
 
 
 def _lmstudio_info(engine: "Engine") -> dict:
-    """The loaded model's files (from `lms ps`): size and bits per weight."""
+    """The loaded model's files: `lms ls` names its key, size and variant (e.g. qwen/qwen3.5-4b@4bit); its folder
+    under ~/.lmstudio/models is the one named after the model and the variant (lmstudio-community/Qwen3.5-4B-MLX-4bit).
+    Bits per weight from that folder's weights (vision tower excluded)."""
     lms = engine.env.get("SOLVETIME_LMS", "lms")
     try:
-        loaded = json.loads(subprocess.run([lms, "ps", "--json"], capture_output=True, text=True, timeout=60).stdout)
+        listed = json.loads(subprocess.run([lms, "ls", "--json"], capture_output=True, text=True, timeout=60).stdout)
     except (OSError, ValueError, subprocess.TimeoutExpired):
         return {}
-    for m in loaded if isinstance(loaded, list) else []:
-        path = m.get("path") or ""
-        root = os.path.join(HOME, ".lmstudio", "models", path) if path and not os.path.isabs(path) else path
-        folder = root if os.path.isdir(root) else os.path.dirname(root)
-        size = text_weight_bytes(folder) or (os.path.getsize(root) if os.path.isfile(root) else None)
-        return {"pack": f"{engine.pack}: {path}", "pack_bytes": size, "weights_bytes": size,
-                "bits_per_weight": bits(size, engine.model)}
-    return {}
+    entry = next((m for m in listed if isinstance(m, dict) and m.get("modelKey") == engine.pack), None)
+    if not entry:
+        return {}
+    variant = (entry.get("selectedVariant") or "").partition("@")[2].lower()
+    name = engine.pack.split("/")[-1].lower()
+    root = os.path.join(HOME, ".lmstudio", "models")
+    folders = [d for d in sorted(glob.glob(os.path.join(root, "*", "*"))) if os.path.isdir(d)
+               and name in os.path.basename(d).lower() and (not variant or variant in os.path.basename(d).lower())]
+    folder = folders[0] if folders else None
+    weights = text_weight_bytes(folder) if folder else None
+    return {"pack": engine.pack + (f" ({os.path.relpath(folder, root)})" if folder else ""),
+            "pack_bytes": entry.get("sizeBytes"), "weights_bytes": weights,
+            "bits_per_weight": bits(weights or entry.get("sizeBytes"), engine.model)}
 
 
 # From LM Studio's files, not from `lms`: any lms command starts the daemon. The llmster release, and the

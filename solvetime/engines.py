@@ -19,6 +19,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
 
 
@@ -342,8 +343,40 @@ def lmstudio(model: str, port: int) -> Engine:
                   info=_lmstudio_info, settings=f"context {ctx}")
 
 
+def _hf_snapshot(repo: str) -> str | None:
+    """A Hugging Face repo's local snapshot, if it is already downloaded (nothing is fetched)."""
+    try:
+        from huggingface_hub import snapshot_download
+        return snapshot_download(repo_id=repo, local_files_only=True)
+    except Exception:
+        return None
+
+
+def omlx(model: str, port: int) -> Engine:
+    """oMLX (`omlx serve`, headless) on the same MLX 4-bit weights as mlx-lm (SOLVETIME_OMLX_MODEL: a model folder),
+    with its own defaults otherwise: memory guard "balanced", no SSD cache, its default speculation. It loads
+    models from a directory of model folders, so the folder is linked into a directory of its own."""
+    exe = os.environ.get("SOLVETIME_OMLX", shutil.which("omlx") or "omlx")
+    src = os.environ.get("SOLVETIME_OMLX_MODEL") or MLX_PACKS[model]
+    folder = os.path.realpath(src) if os.path.isdir(src) else (_hf_snapshot(src) or src)
+    name = os.path.basename(src.rstrip("/"))
+    models = os.path.join(tempfile.gettempdir(), f"solvetime-omlx-models-{port}")
+    if os.path.isdir(folder):
+        os.makedirs(models, exist_ok=True)
+        link = os.path.join(models, name)
+        if os.path.islink(link) and os.readlink(link) != folder:
+            os.remove(link)
+        if not os.path.exists(link):
+            os.symlink(folder, link)
+    return Engine("omlx", model, src,
+                  [exe, "serve", "--model-dir", models, "--headless", "--host", "127.0.0.1", "--port", str(port)],
+                  port, name, env={"OMLX_PORT": str(port)}, clear_env="OMLX_",
+                  version_command=[exe, "--version"], pack_dir=folder if os.path.isdir(folder) else None,
+                  info=_files_info, start_timeout=900)
+
+
 ENGINES = {"raceline": raceline, "kapitsa": kapitsa, "mtplx": mtplx, "mlx-lm": mlx_lm, "llama.cpp": llama_cpp,
-           "ollama": ollama, "lmstudio": lmstudio}
+           "ollama": ollama, "lmstudio": lmstudio, "omlx": omlx}
 
 INSTALL = {
     "raceline": "pip install git+https://github.com/audenvenn/raceline (Apple M5 or later), then `raceline pull <model>`; "
@@ -355,6 +388,8 @@ INSTALL = {
     "ollama": "brew install ollama (or the Ollama app); then `ollama pull <tag>` with a server running",
     "lmstudio": "curl -fsSL https://lmstudio.ai/install.sh | bash (LM Studio's headless daemon, with `lms`), then "
                 "`lms get <model>`; or point SOLVETIME_LMS at an `lms`",
+    "omlx": "brew tap jundot/omlx https://github.com/jundot/omlx && brew install jundot/omlx/omlx; or point "
+            "SOLVETIME_OMLX at an `omlx`",
 }
 
 
@@ -375,6 +410,9 @@ def missing(engine: Engine) -> str | None:
         return f"mlx-lm: {exe} cannot import mlx_lm. {INSTALL['mlx-lm']}"
     if engine.name == "ollama" and not os.path.isfile(_ollama_manifest(engine.api_model)):
         return f"ollama: {engine.api_model} is not pulled. `ollama pull {engine.api_model}` (with `ollama serve` running)"
+    if engine.name == "omlx" and not engine.pack_dir:
+        return (f"omlx: {engine.pack} is not on this Mac. Download it (`hf download {engine.pack}`), or set "
+                "SOLVETIME_OMLX_MODEL to an MLX model folder")
     if engine.name == "llama.cpp":
         gguf = os.environ.get("SOLVETIME_GGUF", "")
         if not os.path.isfile(gguf):

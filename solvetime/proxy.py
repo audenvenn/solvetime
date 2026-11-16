@@ -35,6 +35,7 @@ class Overrides:
     presence_penalty: float | None = None
     enable_thinking: bool | None = None
     max_tokens: int | None = None
+    extra: dict | None = None       # an engine's own fields for the same setting (e.g. Ollama's reasoning_effort)
 
     def apply(self, body: dict) -> dict:
         for key in ("temperature", "top_p", "top_k", "min_p", "presence_penalty", "max_tokens"):
@@ -45,6 +46,7 @@ class Overrides:
             kwargs = dict(body.get("chat_template_kwargs") or {})
             kwargs["enable_thinking"] = self.enable_thinking
             body["chat_template_kwargs"] = kwargs
+        body.update(self.extra or {})
         return body
 
 

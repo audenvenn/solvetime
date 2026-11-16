@@ -99,6 +99,65 @@ def groups(root: str, notes: list | None = None):
     return out
 
 
+def engine_log_rates(run_dir: str, engine: str) -> tuple[list[float], list[float]]:
+    """Per-request speeds the engine logged during the run, for the engines that log them: (decode tok/s of
+    requests that wrote at least 64 tokens, prefill tok/s of requests that read at least 256 new tokens)."""
+    import re
+    path = os.path.join(run_dir, "engine.log")
+    if not os.path.exists(path):
+        return [], []
+    text = open(path, errors="replace").read()
+    decode, prefill = [], []
+    if engine == "raceline":
+        for m in re.finditer(r"prompt (\d+) tok \((\d+) cached, ([0-9.]+)s\)\s+out (\d+) tok at ([0-9.]+) tok/s", text):
+            new, secs, out, rate = int(m[1]) - int(m[2]), float(m[3]), int(m[4]), float(m[5])
+            if out >= 64:
+                decode.append(rate)
+            if new >= 256 and secs > 0:
+                prefill.append(new / secs)
+    elif engine == "kapitsa":
+        for m in re.finditer(r"chat: prompt (\d+) \(cached (\d+)\) in ([0-9.]+) ms.*?, (\d+) tokens in ([0-9.]+) ms", text):
+            new, ms, out, out_ms = int(m[1]) - int(m[2]), float(m[3]), int(m[4]), float(m[5])
+            if out >= 64 and out_ms > 0:
+                decode.append(out / out_ms * 1000)
+            if new >= 256 and ms > 0:
+                prefill.append(new / ms * 1000)
+    elif engine == "llama.cpp":
+        for m in re.finditer(r"prompt eval time =\s*([0-9.]+) ms /\s*(\d+) tokens.*?\n.*?\beval time =\s*([0-9.]+) ms /\s*(\d+) tokens", text):
+            ms, new, out_ms, out = float(m[1]), int(m[2]), float(m[3]), int(m[4])
+            if out >= 64 and out_ms > 0:
+                decode.append(out / out_ms * 1000)
+            if new >= 256 and ms > 0:
+                prefill.append(new / ms * 1000)
+    return decode, prefill
+
+
+def time_table(root: str) -> str:
+    """One row per run: how long its attempts took end to end, per solved task, and in the engine, with the
+    speeds the engine logged while the agent worked (medians). Runs with settings beyond the defaults are
+    marked: their times compare with nothing else."""
+    lines = ["| Model | Engine | Task set | Settings | Attempts | Solved | Total time | Per solved task | Requests | "
+             "Tokens written | Time in the engine | Decode during the run (median) | Prefill during the run (median) |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    for meta, attempts in runs(root):
+        if meta.get("load_failure") or not attempts:
+            continue
+        n, solved = len(attempts), sum(a["solved"] for a in attempts)
+        wall = sum(a["seconds"] for a in attempts)
+        req = sum(a.get("request_seconds") or 0 for a in attempts)
+        toks = sum(a.get("completion_tokens") or 0 for a in attempts)
+        decode, prefill = engine_log_rates(meta["_dir"], meta["engine"])
+        med = lambda v: f"{statistics.median(v):.0f} tok/s ({len(v)} requests)" if v else "not logged"
+        sets = ", ".join(sorted({a["set"] for a in attempts}))
+        settings = meta.get("settings") or "defaults"
+        lines.append(f"| {meta['model']} | {engine_name(meta)} | {sets} | {settings}"
+                     f"{' (times not comparable)' if settings != 'defaults' else ''} | {n} | {solved} | "
+                     f"{wall / 60:.1f} min | {f'{wall / solved:.0f} s' if solved else ''} | "
+                     f"{sum(a['requests'] for a in attempts)} | {toks} | {req / 60:.1f} min | {med(decode)} | "
+                     f"{med(prefill)} |")
+    return "\n".join(lines) + "\n"
+
+
 def pooled_table(root: str, notes: list | None = None) -> str:
     """One row per model and engine build, every task set pooled; engines that were not run, and why."""
     lines = ["| Model | Engine | Build | Settings | Bits per weight | Tasks | Solved | Ended by malformed output | "

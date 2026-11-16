@@ -73,8 +73,8 @@ class Replay(unittest.TestCase):
         self.assertEqual(replay(task, traj), (True, ""))
 
     def test_settings(self):
-        meta = {"agent": "mini-swe-agent 2.4.6", "step_limit": 50, "wall_seconds": 900, "thinking": "thinking",
-                "overrides_sent": {"temperature": 0.6, "top_p": 0.95, "top_k": 20, "min_p": 0.0,
+        meta = {"agent": "mini-swe-agent 2.4.6", "step_limit": 50, "wall_seconds": 900, "model": "qwen3.6-35b-a3b",
+                "thinking": "thinking", "overrides_sent":{"temperature": 0.6, "top_p": 0.95, "top_k": 20, "min_p": 0.0,
                                    "presence_penalty": 0.0, "enable_thinking": True},
                 "thinking_switch": "honoured", "tasks": ["bisect"]}
         self.assertEqual(settings_problems(meta), [])

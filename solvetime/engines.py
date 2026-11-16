@@ -5,8 +5,8 @@ itself or its documentation recommends for the memory at hand. The build's
 name, bits and size go into every result. An engine that cannot load the
 model here is a result too ("does not fit").
 
-Models are named by the original checkpoint: qwen3.6-35b-a3b, qwen3.8-27b,
-qwen3.5-9b. `pack()` maps that name to the engine's own build.
+Models are named by the original checkpoint (qwen3.6-35b-a3b, qwen3.8-27b,
+qwen3.5-9b); models.py names each engine's build of each.
 """
 
 from __future__ import annotations
@@ -22,6 +22,8 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass, field
+
+from .models import BUILD_VARIABLE, build, model as model_entry, text_params
 
 
 @dataclass
@@ -84,12 +86,6 @@ class Engine:
 
 HOME = os.path.expanduser("~")
 
-# Parameters of the original checkpoints without their vision tower (Hugging Face safetensors metadata, minus
-# the tower's tensors): the text model and its MTP head. Engines load the tower only when an image comes.
-PARAMS = {"qwen3.5-9b": 9_653_104_368 - 456_010_480, "qwen3.8-27b": 27_781_427_952 - 460_730_096,
-          "qwen3.6-35b-a3b": 35_951_822_704 - 446_571_248}
-
-
 def text_weight_bytes(folder: str | None) -> int | None:
     """Bytes of the tensors in a folder's *.safetensors that are not the vision tower (headers only)."""
     if not folder or not os.path.isdir(folder):
@@ -115,8 +111,10 @@ def _files_info(engine: "Engine") -> dict:
 
 
 def bits(weights_bytes: int | None, model: str) -> float | None:
-    """Bits per weight of the text model: bf16 is 16."""
-    return round(8 * weights_bytes / PARAMS[model], 2) if weights_bytes and model in PARAMS else None
+    """Bits per weight of the text model (its parameters without the vision tower, which engines load only when
+    an image comes): bf16 is 16."""
+    params = text_params(model) if weights_bytes else None
+    return round(8 * weights_bytes / params, 2) if params else None
 
 
 # The package version, and the commit when raceline runs from a git checkout (where the version alone names
@@ -140,9 +138,9 @@ def _python_beside(exe: str) -> str:
 
 
 def raceline(model: str, port: int) -> Engine:
-    alias = {"qwen3.6-35b-a3b": "qwen3.6-35b-a3b", "qwen3.8-27b": "qwen3.8-27b", "qwen3.5-9b": "qwen3.5-9b"}[model]
+    alias = model_entry(model).builds.get("raceline", "")
     exe = os.environ.get("SOLVETIME_RACELINE", shutil.which("raceline") or "raceline")
-    target = os.environ.get("SOLVETIME_RACELINE_FILE", alias)   # a pulled model's name, or its .rlm file
+    target = build(model, "raceline")   # a pulled model's name, or its .rlm file
     # The server's default window is 32768 tokens; an agent's conversation can outgrow it, so 65536 here
     # (the other engines default to 16K-256K on a 24 GB Mac). The 27B keeps 32768: its weights leave no room
     # for a 65536-token cache on 24 GB. The longest conversation in the core tasks is about 13K tokens.
@@ -150,7 +148,7 @@ def raceline(model: str, port: int) -> Engine:
     # Extra server options (e.g. "--expert-cache 8": 8 GB of experts in memory, the rest read from the SSD),
     # kept in the command and shown as the run's settings. The build stays the same.
     extra = os.environ.get("SOLVETIME_RACELINE_ARGS", "").split()
-    return Engine("raceline", model, f"{alias} (FP4, 4.0 bits, with its MTP head)",
+    return Engine("raceline", model, f"{alias or os.path.basename(target)} (FP4, 4.0 bits, with its MTP head)",
                   [exe, "serve", target, "--port", str(port), "--ctx", ctx, *extra],
                   port, alias, version_command=[_python_beside(exe), "-c", RACELINE_VERSION],
                   pack_dir=os.environ.get("SOLVETIME_RACELINE_FILE"), ours=True, settings=" ".join(extra))
@@ -183,40 +181,30 @@ def _kapitsa_info(engine: Engine) -> dict:
 
 
 def kapitsa(model: str, port: int) -> Engine:
-    key = {"qwen3.6-35b-a3b": "35b", "qwen3.8-27b": "27b", "qwen3.5-9b": "9b"}[model]
+    key = build(model, "kapitsa")   # its catalog's name for the model
     # SOLVETIME_KAPITSA: another kapitsa binary, e.g. a build of main (its version names the commit); the models
     # are shared (~/.cache/kapitsa/models)
     exe = os.environ.get("SOLVETIME_KAPITSA", "kapitsa")
     return Engine("kapitsa", model, f"kapitsa {key} (the variant `kapitsa doctor` plans for this Mac)",
                   [exe, "serve", "--model", key, "--port", str(port), "--private", "--local"],
-                  port, {"35b": "qwen3.6-35b-a3b", "27b": "qwen3.8-27b", "9b": "qwen3.5-9b"}[key],
+                  port, model,
                   version_command=[exe, "--version"], info=_kapitsa_info)
 
 
-# The same checkpoint as the other engines, in the pack MTPLX's catalog rates as fitting a 24 GB Mac (27B: Bare Speed,
-# "tight_fit"; the catalog's "recommended" 24 GB pick, Ternary Bonsai 2 27B, is a different model). No 35B pack fits
-# (insufficient_memory; see the results' not-run notes): that entry is for larger Macs.
-MTPLX_PACKS = {
-    "qwen3.5-9b": "Youssofal/Qwen3.5-9B-MTPLX-Optimized-Speed",
-    "qwen3.8-27b": "Youssofal/Qwen3.8-27B-MTPLX-Bare-Speed",
-    "qwen3.6-35b-a3b": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed",
-}
-
-
 def mtplx(model: str, port: int) -> Engine:
-    repo = MTPLX_PACKS[model]
+    """MTPLX on the pack of the same checkpoint that its catalog rates as fitting a 24 GB Mac (27B: Bare Speed,
+    "tight_fit"; the catalog's "recommended" 24 GB pick, Ternary Bonsai 2 27B, is a different model). No 35B pack
+    fits (insufficient_memory; see the results' not-run notes): that entry is for larger Macs."""
+    repo = build(model, "mtplx")
     exe = os.environ.get("SOLVETIME_MTPLX", shutil.which("mtplx") or "mtplx")
     return Engine("mtplx", model, repo, [exe, "serve", "--model", repo, "--port", str(port), "--no-auth", "--yes"],
                   port, repo, health_path="/health", version_command=[exe, "--version"],
-                  pack_dir=os.path.join(HOME, ".mtplx/models", repo.replace("/", "--")), info=_files_info)
-
-
-MLX_PACKS = {"qwen3.5-9b": "mlx-community/Qwen3.5-9B-4bit", "qwen3.8-27b": "mlx-community/Qwen3.8-27B-4bit",
-             "qwen3.6-35b-a3b": "mlx-community/Qwen3.6-35B-A3B-4bit"}
+                  pack_dir=os.path.join(HOME, ".mtplx/models", repo.replace("/", "--")) if repo else None,
+                  info=_files_info)
 
 
 def mlx_lm(model: str, port: int) -> Engine:
-    path = os.environ.get("SOLVETIME_MLX_MODEL", MLX_PACKS[model])
+    path = build(model, "mlx-lm")
     # The Python that has mlx-lm: SOLVETIME_MLX_PYTHON, else this one if mlx-lm is installed beside solvetime.
     py = os.environ.get("SOLVETIME_MLX_PYTHON") or (sys.executable if importlib.util.find_spec("mlx_lm") else "python3")
     # One cached prompt: a single user's agent only ever extends its one conversation. The server's default keeps
@@ -238,7 +226,7 @@ def llama_cpp(model: str, port: int) -> Engine:
     """llama.cpp's llama-server on a GGUF (SOLVETIME_GGUF), all layers on the GPU, flash attention, the model's
     own chat template, plain decoding. SOLVETIME_LLAMA_SPEC=draft-mtp drafts with the model's MTP head, for a GGUF
     that carries one (the Qwen3.6-35B-A3B UD-IQ2_XXS GGUF of the first results does not)."""
-    gguf = os.environ.get("SOLVETIME_GGUF", "")
+    gguf = build(model, "llama.cpp")
     ctx = os.environ.get("SOLVETIME_LLAMA_CTX", "65536")
     command = ["llama-server", "-m", gguf, "--port", str(port), "--host", "127.0.0.1", "-ngl", "999", "-fa", "on",
                "--jinja", "-c", ctx]
@@ -248,10 +236,6 @@ def llama_cpp(model: str, port: int) -> Engine:
     return Engine("llama.cpp", model, os.path.basename(gguf) or "(set SOLVETIME_GGUF)", command, port,
                   os.path.basename(gguf), health_path="/health", version_command=["llama-server", "--version"],
                   pack_dir=gguf or None, info=_gguf_info)
-
-
-# Ollama's own default tag for each model (ollama.com/library): its q4_K_M GGUF, as `ollama run` pulls it.
-OLLAMA_TAGS = {"qwen3.6-35b-a3b": "qwen3.6:35b-a3b", "qwen3.8-27b": "qwen3.8:27b", "qwen3.5-9b": "qwen3.5:9b"}
 
 
 def _ollama_models() -> str:
@@ -283,9 +267,10 @@ def ollama(model: str, port: int) -> Engine:
     the model card says). Thinking is turned off with reasoning_effort "none", not chat_template_kwargs. The
     27B tag drafts with its MTP head as shipped (draft_num_predict 4). The tag as Ollama ships it (SOLVETIME_OLLAMA_TAG for another). Its context
     window: 65536 tokens, as llama.cpp gets here; Ollama's own default depends on the GPU's memory and can be
-    4096, which an agent's conversation outgrows without an error (the oldest messages are cut)."""
+    4096, which an agent's conversation outgrows without an error (the oldest messages are cut). The tag is
+    Ollama's own default for the model (ollama.com/library): its q4_K_M GGUF, as `ollama run` pulls it."""
     exe = os.environ.get("SOLVETIME_OLLAMA", shutil.which("ollama") or "ollama")
-    tag = os.environ.get("SOLVETIME_OLLAMA_TAG", OLLAMA_TAGS[model])
+    tag = build(model, "ollama")
     ctx = os.environ.get("SOLVETIME_OLLAMA_CTX", "65536")
     return Engine("ollama", model, tag, [exe, "serve"], port, tag, health_path="/api/version",
                   env={"OLLAMA_HOST": f"127.0.0.1:{port}", "OLLAMA_CONTEXT_LENGTH": ctx, "OLLAMA_NOPRUNE": "1",
@@ -295,11 +280,6 @@ def ollama(model: str, port: int) -> Engine:
                                    "'s/.*(client )?version is /ollama /p' | head -1"],
                   info=_ollama_info, settings=f"context {ctx}",
                   clear_env="OLLAMA_", no_thinking={"reasoning_effort": "none"})
-
-
-# LM Studio's staff pick for each model (`lms get <key>`; on a Mac, its MLX 4-bit build from lmstudio-community).
-LMSTUDIO_MODELS = {"qwen3.6-35b-a3b": "qwen/qwen3.6-35b-a3b", "qwen3.8-27b": "qwen/qwen3.8-27b",
-                   "qwen3.5-9b": "qwen/qwen3.5-9b"}
 
 
 def _lmstudio_info(engine: "Engine") -> dict:
@@ -343,11 +323,11 @@ print("lmstudio llmster " + (releases[-1] if releases else "?") + (": " + ", ".j
 
 def lmstudio(model: str, port: int) -> Engine:
     """LM Studio's headless daemon (llmster) with the newest runtimes it offers, its staff pick for the model
-    (SOLVETIME_LMSTUDIO_MODEL for another), one request at a time, a 65536-token window as the other engines get
+    (`lms get <key>`; on a Mac, its MLX 4-bit build from lmstudio-community), one request at a time, a 65536-token window as the other engines get
     here. launchers/lmstudio.sh starts a fresh daemon, loads the model, starts the server, and stops them all
     when the run ends."""
     lms = os.environ.get("SOLVETIME_LMS", os.path.join(HOME, ".lmstudio", "bin", "lms"))
-    key = os.environ.get("SOLVETIME_LMSTUDIO_MODEL", LMSTUDIO_MODELS[model])
+    key = build(model, "lmstudio")
     ctx = os.environ.get("SOLVETIME_LMSTUDIO_CTX", "65536")
     launcher = os.path.join(os.path.dirname(os.path.abspath(__file__)), "launchers", "lmstudio.sh")
     return Engine("lmstudio", model, key, ["/bin/bash", launcher, str(port), key, "solvetime", ctx], port, "solvetime",
@@ -372,7 +352,7 @@ def omlx(model: str, port: int) -> Engine:
     with its own defaults otherwise: memory guard "balanced", no SSD cache, its default speculation. It loads
     models from a directory of model folders, so the folder is linked into a directory of its own."""
     exe = os.environ.get("SOLVETIME_OMLX", shutil.which("omlx") or "omlx")
-    src = os.environ.get("SOLVETIME_OMLX_MODEL") or MLX_PACKS[model]
+    src = build(model, "omlx")
     folder = os.path.realpath(src) if os.path.isdir(src) else (_hf_snapshot(src) or src)
     name = os.path.basename(src.rstrip("/"))
     models = os.path.join(tempfile.gettempdir(), f"solvetime-omlx-models-{port}")
@@ -421,10 +401,18 @@ def missing(engine: Engine) -> str | None:
     exe = engine.env.get("SOLVETIME_LMS", engine.command[0]) if engine.name == "lmstudio" else engine.command[0]
     if not (shutil.which(exe) or os.path.isfile(exe)):
         return f"{engine.name}: `{exe}` not found. Install it: {INSTALL[engine.name]}"
+    if engine.name != "llama.cpp" and not build(engine.model, engine.name):
+        return (f"{engine.name}: no build of {engine.model} is known for it yet; set {BUILD_VARIABLE[engine.name]} "
+                "to one")
     if engine.name == "mlx-lm" and subprocess.run([exe, "-c", "import mlx_lm"], capture_output=True).returncode:
         return f"mlx-lm: {exe} cannot import mlx_lm. {INSTALL['mlx-lm']}"
     if engine.name == "ollama" and not os.path.isfile(_ollama_manifest(engine.api_model)):
         return f"ollama: {engine.api_model} is not pulled. `ollama pull {engine.api_model}` (with `ollama serve` running)"
+    if engine.name == "lmstudio":   # from its files: any lms command starts the daemon
+        name = engine.pack.split("/")[-1].lower()
+        folders = glob.glob(os.path.join(HOME, ".lmstudio", "models", "*", "*"))
+        if not any(name in os.path.basename(d).lower() for d in folders if os.path.isdir(d)):
+            return f"lmstudio: {engine.pack} is not downloaded. `lms get {engine.pack}`"
     if engine.name == "omlx" and not engine.pack_dir:
         return (f"omlx: {engine.pack} is not on this Mac. Download it (`hf download {engine.pack}`), or set "
                 "SOLVETIME_OMLX_MODEL to an MLX model folder")

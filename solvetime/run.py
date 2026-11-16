@@ -17,6 +17,7 @@ log, versions, build and memory into run.json.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import collections
 import http.client
 import json
@@ -90,11 +91,13 @@ def first_token(port: int, model: str, messages: list, extra: dict | None = None
     return (first if first is not None else time.monotonic() - t0), content, reasoning
 
 
-def thinking_switch(port: int, model: str) -> str:
-    """Does the engine honour chat_template_kwargs.enable_thinking? Probed both ways."""
+def thinking_switch(port: int, model: str, no_thinking: dict | None = None) -> str:
+    """Does the engine honour the thinking switch (chat_template_kwargs.enable_thinking, with the engine's own
+    fields for "off" if it has any)? Probed both ways."""
     q = [{"role": "user", "content": "What is 17 * 23? Answer with the number only."}]
     try:
-        _, c_off, r_off = first_token(port, model, q, {"chat_template_kwargs": {"enable_thinking": False}}, 64)
+        _, c_off, r_off = first_token(port, model, q, {"chat_template_kwargs": {"enable_thinking": False},
+                                                       **(no_thinking or {})}, 64)
         _, c_on, r_on = first_token(port, model, q, {"chat_template_kwargs": {"enable_thinking": True}}, 64)
     except (OSError, http.client.HTTPException) as e:
         return f"probe failed: {e}"
@@ -306,10 +309,14 @@ def main(argv=None):
             meta["warmup_first_token_seconds"] = round(ttft, 2)
         except (OSError, http.client.HTTPException) as e:
             meta["warmup_error"] = str(e)
-        meta["thinking_switch"] = thinking_switch(engine.port, engine.api_model)
+        meta["thinking_switch"] = thinking_switch(engine.port, engine.api_model, engine.no_thinking)
         meta["overrides_sent"] = {k: v for k, v in SAMPLING[args.thinking].__dict__.items() if v is not None}
         meta.update(engine.pack_info())
-        proxy = Proxy(f"http://127.0.0.1:{engine.port}", SAMPLING[args.thinking]).start()
+        overrides = SAMPLING[args.thinking]
+        if overrides.enable_thinking is False and engine.no_thinking:
+            overrides = dataclasses.replace(overrides, extra=engine.no_thinking)
+            meta["overrides_sent"] = {**meta["overrides_sent"], **engine.no_thinking}
+        proxy = Proxy(f"http://127.0.0.1:{engine.port}", overrides).start()
         with open(os.path.join(out_dir, "attempts.jsonl"), "a") as out:
             for k in range(1, args.attempts + 1):          # round-robin: every task once, then again
                 for name in names:

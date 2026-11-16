@@ -40,6 +40,8 @@ class Engine:
     ours: bool = False              # raceline: the author's own engine, labelled as such
     settings: str = ""              # runtime options beyond the defaults, as passed (shown in the tables)
     clear_env: str = ""             # a prefix: the user's own variables with it are not passed to the server
+    no_thinking: dict = field(default_factory=dict)   # request fields that turn thinking off, beyond
+                                                     # chat_template_kwargs.enable_thinking (which it may ignore)
 
     def server_env(self) -> dict:
         base = {k: v for k, v in os.environ.items() if not (self.clear_env and k.startswith(self.clear_env))}
@@ -276,7 +278,10 @@ def _ollama_info(engine: "Engine") -> dict:
 
 def ollama(model: str, port: int) -> Engine:
     """A dedicated `ollama serve` on its own port, over the user's model store, so the desktop app's settings
-    and loaded models stay out. The tag as Ollama ships it (SOLVETIME_OLLAMA_TAG for another). Its context
+    and loaded models stay out. Its OpenAI endpoint reads temperature, top_p and presence_penalty from a request
+    but not top_k or min_p: those come from the tag's own parameters (top_k 20 and min_p 0 for these tags, as
+    the model card says). Thinking is turned off with reasoning_effort "none", not chat_template_kwargs. The
+    27B tag drafts with its MTP head as shipped (draft_num_predict 4). The tag as Ollama ships it (SOLVETIME_OLLAMA_TAG for another). Its context
     window: 65536 tokens, as llama.cpp gets here; Ollama's own default depends on the GPU's memory and can be
     4096, which an agent's conversation outgrows without an error (the oldest messages are cut)."""
     exe = os.environ.get("SOLVETIME_OLLAMA", shutil.which("ollama") or "ollama")
@@ -289,7 +294,7 @@ def ollama(model: str, port: int) -> Engine:
                   version_command=["sh", "-c", f"{shlex.quote(exe)} --version 2>&1 | sed -n -E "
                                    "'s/.*(client )?version is /ollama /p' | head -1"],
                   info=_ollama_info, settings=f"context {ctx}",
-                  clear_env="OLLAMA_")
+                  clear_env="OLLAMA_", no_thinking={"reasoning_effort": "none"})
 
 
 # LM Studio's staff pick for each model (`lms get <key>`; on a Mac, its MLX 4-bit build from lmstudio-community).

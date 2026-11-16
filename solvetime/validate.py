@@ -127,9 +127,9 @@ def settings_problems(meta: dict) -> list[str]:
     if want is None:
         problems.append(f"unknown thinking setting {meta.get('thinking')!r}")
     else:
-        sent = meta.get("overrides_sent") or {}
-        expected = {k: v for k, v in want.__dict__.items() if v is not None}
-        if sent != expected:
+        expected = {k: v for k, v in want.__dict__.items() if v is not None and k != "extra"}
+        sent = {k: v for k, v in (meta.get("overrides_sent") or {}).items() if k in want.__dict__ and k != "extra"}
+        if sent != expected:          # an engine's own fields for the same setting (reasoning_effort) may come on top
             problems.append(f"sampling sent {sent}, expected {expected}")
     if meta.get("thinking_switch") not in ("honoured", None):
         problems.append(f"the engine's thinking switch: {meta.get('thinking_switch')}")

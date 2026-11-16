@@ -353,7 +353,9 @@ def lmstudio(model: str, port: int) -> Engine:
     return Engine("lmstudio", model, key, ["/bin/bash", launcher, str(port), key, "solvetime", ctx], port, "solvetime",
                   env={"SOLVETIME_LMS": lms}, start_timeout=900,
                   version_command=[sys.executable, "-c", LMSTUDIO_VERSION],
-                  info=_lmstudio_info, settings=f"context {ctx}")
+                  info=_lmstudio_info, settings=f"context {ctx}",
+                  # chat_template_kwargs is ignored; reasoning_effort "none" turns thinking off (probed on qwen3.5-4b)
+                  no_thinking={"reasoning_effort": "none"})
 
 
 def _hf_snapshot(repo: str) -> str | None:

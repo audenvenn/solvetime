@@ -6,7 +6,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from solvetime.submit import HOME, scrubber  # noqa: E402
+from solvetime.submit import HOME, scrubber, targets  # noqa: E402
 from solvetime.tasks import TASKS  # noqa: E402
 from solvetime.validate import commands, disk_scan, original_work_dir, replay, settings_problems  # noqa: E402
 
@@ -17,14 +17,24 @@ def call(cmd):
 
 
 class Scrub(unittest.TestCase):
-    def test_home_names_and_emails(self):
+    def test_what_could_name_the_user_goes_and_task_data_stays(self):
         scrub = scrubber()
-        text = f"{HOME}/projects/x and someone@mail.com, but first+tag@example.co.uk stays"
-        out = scrub(text)
+        out = scrub(f"{HOME}/projects/x, someone@mail.com and first+tag@example.co.uk")
         self.assertNotIn(HOME, out)
         self.assertIn("~/projects/x", out)
-        self.assertIn("<email>", out)
-        self.assertIn("first+tag@example.co.uk", out)      # a task's own test data is left alone
+        self.assertIn("someone@mail.com", out)               # email-shaped task data stays as it was
+        for old, new in targets():                           # the user's own (git email, full name, host)
+            self.assertNotIn(old, scrub(f"before {old} after"))   # never printed: the test must not leak them
+
+    def test_json_stays_valid(self):
+        # A JSON string where an escape runs into an address ("\nx@y.io"): scrubbing the text would break
+        # the escape; scrubbing value by value cannot.
+        doc = json.dumps({"output": f"line\nx@y.io\n{HOME}/a", "n": [1, f"{HOME}"]})
+        out = json.loads(scrubber()(doc, "t.json"))
+        self.assertEqual(out["output"], "line\nx@y.io\n~/a")
+        self.assertEqual(out["n"], [1, "~"])
+        lines = scrubber()(doc + "\n" + doc + "\n", "t.jsonl").splitlines()
+        self.assertEqual([json.loads(line)["n"] for line in lines], [[1, "~"], [1, "~"]])
 
 
 class Replay(unittest.TestCase):

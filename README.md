@@ -114,7 +114,7 @@ solvetime submit results/          # one .tar.gz; home paths, host names, emails
 solvetime validate <bundle>        # replays every attempt's commands in the sandbox and re-scores it
 ```
 
-Then open a [Results from your Mac](../../issues/new/choose) issue with the bundle. Every attempt published
+Then open a [Results from your Mac](https://github.com/audenvenn/solvetime/issues/new/choose) issue with the bundle. Every attempt published
 here was replayed and re-scored the same way, and all 128 match what was recorded:
 `solvetime validate published/2026-11-qwen3.6-35b-a3b-m6-24gb` reruns that check in about 90 seconds.
 

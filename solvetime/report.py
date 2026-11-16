@@ -24,13 +24,21 @@ def gb(n):
     return f"{n / 1e9:.1f} GB" if n else ""
 
 
+# Names the tables show instead of the recorded ones (publish --names), e.g. a release's name for the build it
+# shipped: {"raceline (ours) 0.7.1 (v0.7.1-6-g3de235d)": "raceline 0.8.0 (ours, 3de235d)"}. run.json keeps the
+# recorded version.
+DISPLAY: dict[str, str] = {}
+
+
 def engine_name(meta: dict) -> str:
-    """"kapitsa (ours) 0.2.36 (fe6a17a)": the engine, and its version without the engine's name repeated."""
+    """"kapitsa 0.2.36 (fe6a17a)": the engine, and its version without the engine's name repeated (or the name
+    DISPLAY gives it)."""
     version = (meta.get("version") or "").strip()
     for prefix in (meta["engine"], "version:", "mtplx"):
         if version.lower().startswith(prefix.lower()):
             version = version[len(prefix):].strip()
-    return meta["engine"] + (" (ours)" if meta.get("ours") else "") + (f" {version}" if version else "")
+    name = meta["engine"] + (" (ours)" if meta.get("ours") else "") + (f" {version}" if version else "")
+    return DISPLAY.get(name, name)
 
 
 def wilson(k: int, n: int, z: float = 1.959964) -> tuple[float, float]:

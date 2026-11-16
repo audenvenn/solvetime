@@ -61,9 +61,12 @@ def main(argv=None):
     ap.add_argument("--notes", help="JSON list of engines that were not run, and why")
     ap.add_argument("--title", default="Results")
     ap.add_argument("--about", help="a Markdown file about these runs, placed after the summary line")
+    ap.add_argument("--names", help="a JSON object: the names the tables show for recorded build names")
     args = ap.parse_args(argv)
 
     os.makedirs(args.out, exist_ok=True)
+    if args.names:
+        report.DISPLAY.update(json.load(open(args.names)))
     names = sorted(os.listdir(args.results))
     runs = [n for n in names if os.path.isfile(os.path.join(args.results, n, "run.json"))
             and any(fnmatch.fnmatch(n, p) for p in args.runs)]

@@ -1,11 +1,11 @@
-"""python -m solvetime run ... | speed ... | report ... | publish ... | doctor"""
+"""python -m solvetime run | speed | report | publish | doctor | submit | validate"""
 
 import sys
 
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in ("run", "speed", "report", "publish", "doctor"):
-        sys.exit("usage: python -m solvetime run|speed|report|publish|doctor [options]  (--help after the command for its options)")
+    if len(sys.argv) < 2 or sys.argv[1] not in ("run", "speed", "report", "publish", "doctor", "submit", "validate"):
+        sys.exit("usage: python -m solvetime run|speed|report|publish|doctor|submit|validate [options]  (--help after the command for its options)")
     command, argv = sys.argv[1], sys.argv[2:]
     if command == "run":
         from .run import main as run
@@ -13,6 +13,12 @@ def main():
     elif command == "speed":
         from .speed import main as speed
         speed(argv)
+    elif command == "submit":
+        from .submit import main as submit
+        submit(argv)
+    elif command == "validate":
+        from .validate import main as validate
+        validate(argv)
     elif command == "doctor":
         from .doctor import main as doctor
         doctor(argv)

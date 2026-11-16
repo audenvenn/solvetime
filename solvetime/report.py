@@ -67,6 +67,10 @@ def rejected_replies(run_dir: str, task: str, attempt: int) -> tuple[int, int]:
     return no_call, cut_off
 
 
+def pval(p: float) -> str:
+    return "< 0.001" if p < 0.001 else f"{p:.3f}"
+
+
 def pct(k: int, n: int) -> str:
     lo, hi = wilson(k, n)
     return f"{k}/{n} ({100 * k / n:.0f}%, 95% CI {100 * lo:.0f}-{100 * hi:.0f}%)" if n else ""
@@ -142,9 +146,9 @@ def pairwise_table(root: str) -> str:
                     return sum(a["solved"] for a in att), bad, len(att)
                 sa, ba, na = counts(ga)
                 sb, bb, nb = counts(gb_)
-                lines.append(f"| {model} | {ka[1]} | {kb[1]} | {sa}/{na} vs {sb}/{nb} | "
-                             f"{fisher(sa, na - sa, sb, nb - sb):.3f} | {ba}/{na} vs {bb}/{nb} | "
-                             f"{fisher(ba, na - ba, bb, nb - bb):.3f} |")
+                lines.append(f"| {model} | {engine_name(ga['meta'])} | {engine_name(gb_['meta'])} | {sa}/{na} vs {sb}/{nb} | "
+                             f"{pval(fisher(sa, na - sa, sb, nb - sb))} | {ba}/{na} vs {bb}/{nb} | "
+                             f"{pval(fisher(ba, na - ba, bb, nb - bb))} |")
     return "\n".join(lines) + "\n"
 
 

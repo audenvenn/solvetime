@@ -32,15 +32,20 @@ import time
 import urllib.request
 
 from .engines import ENGINES, Engine, harness_version, missing
+from .models import MODELS, model as model_entry
 from .proxy import Overrides, Proxy
 from .sandbox import Sandbox, SandboxedEnvironment
 from .tasks import TASKS
 
-# The model card's sampling (Qwen3.5 / 3.6 / 3.8), the same for every engine.
-SAMPLING = {"thinking": Overrides(temperature=0.6, top_p=0.95, top_k=20, min_p=0.0, presence_penalty=0.0,
-                                  enable_thinking=True),
-            "no-thinking": Overrides(temperature=0.7, top_p=0.8, top_k=20, min_p=0.0, presence_penalty=1.5,
-                                     enable_thinking=False)}
+# Thinking on or off: each model card's sampling for both is in models.py, the same for every engine.
+THINKING = ("thinking", "no-thinking")
+
+
+def sampling(model: str, thinking: str) -> Overrides:
+    """The model card's sampling for thinking or non-thinking use (models.py), sent with every request."""
+    return Overrides(**model_entry(model).sampling[thinking])
+
+
 STEP_LIMIT = 50
 WALL_SECONDS = 900
 COMMAND_SECONDS = 120
@@ -269,11 +274,11 @@ def attempt(engine: Engine, proxy: Proxy, task: dict, number: int, out_dir: str,
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="solvetime run", description=__doc__.split("\n\n")[0])
     ap.add_argument("--engine", required=True, choices=sorted(ENGINES))
-    ap.add_argument("--model", required=True, help="qwen3.6-35b-a3b, qwen3.8-27b or qwen3.5-9b")
+    ap.add_argument("--model", required=True, choices=sorted(MODELS), help="the checkpoint (models.py)")
     ap.add_argument("--set", default="core", choices=["core", "extended", "all"])
     ap.add_argument("--tasks", help="comma-separated names (default: the whole set)")
     ap.add_argument("--attempts", type=int, default=2)
-    ap.add_argument("--thinking", default="thinking", choices=sorted(SAMPLING))
+    ap.add_argument("--thinking", default="thinking", choices=THINKING)
     ap.add_argument("--port", type=int, default=8890)
     ap.add_argument("--out", default="results")
     args = ap.parse_args(argv)
@@ -289,7 +294,7 @@ def main(argv=None):
     os.makedirs(os.path.join(out_dir, "trajectories"), exist_ok=True)
     meta = {"engine": engine.name, "ours": engine.ours, "version": engine.version(), "model": args.model,
             "pack": engine.pack, "settings": engine.settings, "command": engine.command, "harness": harness_version(), "thinking": args.thinking,
-            "sampling": SAMPLING[args.thinking].__dict__, "agent": "mini-swe-agent " + _mini_version(),
+            "sampling": sampling(args.model, args.thinking).__dict__, "agent": "mini-swe-agent " + _mini_version(),
             "step_limit": STEP_LIMIT, "wall_seconds": WALL_SECONDS, "mac": _mac(), "started": time.strftime("%F %T"),
             "tasks": names, "attempts": args.attempts, **calibrate(), "memory_before": memory_counters()}
     log = open(os.path.join(out_dir, "engine.log"), "w")
@@ -310,9 +315,9 @@ def main(argv=None):
         except (OSError, http.client.HTTPException) as e:
             meta["warmup_error"] = str(e)
         meta["thinking_switch"] = thinking_switch(engine.port, engine.api_model, engine.no_thinking)
-        meta["overrides_sent"] = {k: v for k, v in SAMPLING[args.thinking].__dict__.items() if v is not None}
+        overrides = sampling(args.model, args.thinking)
+        meta["overrides_sent"] = {k: v for k, v in overrides.__dict__.items() if v is not None}
         meta.update(engine.pack_info())
-        overrides = SAMPLING[args.thinking]
         if overrides.enable_thinking is False and engine.no_thinking:
             overrides = dataclasses.replace(overrides, extra=engine.no_thinking)
             meta["overrides_sent"] = {**meta["overrides_sent"], **engine.no_thinking}

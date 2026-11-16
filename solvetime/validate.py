@@ -25,7 +25,8 @@ import subprocess
 import tarfile
 import tempfile
 
-from .run import COMMAND_SECONDS, SAMPLING, STEP_LIMIT, WALL_SECONDS, check
+from .models import MODELS
+from .run import COMMAND_SECONDS, STEP_LIMIT, THINKING, WALL_SECONDS, check, sampling
 from .sandbox import Sandbox
 from .tasks import TASKS
 
@@ -123,9 +124,10 @@ def settings_problems(meta: dict) -> list[str]:
     if meta.get("step_limit") != STEP_LIMIT or meta.get("wall_seconds") != WALL_SECONDS:
         problems.append(f"limits are {meta.get('step_limit')} steps and {meta.get('wall_seconds')} s, "
                         f"not {STEP_LIMIT} and {WALL_SECONDS}")
-    want = SAMPLING.get(meta.get("thinking", ""))
+    name, thinking = meta.get("model", ""), meta.get("thinking", "")
+    want = sampling(name, thinking) if name in MODELS and thinking in THINKING else None
     if want is None:
-        problems.append(f"unknown thinking setting {meta.get('thinking')!r}")
+        problems.append(f"unknown model or thinking setting: {name!r}, {thinking!r}")
     else:
         expected = {k: v for k, v in want.__dict__.items() if v is not None and k != "extra"}
         sent = {k: v for k, v in (meta.get("overrides_sent") or {}).items() if k in want.__dict__ and k != "extra"}

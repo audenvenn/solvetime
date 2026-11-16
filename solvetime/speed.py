@@ -34,6 +34,7 @@ import time
 import uuid
 
 from .engines import ENGINES, harness_version, missing
+from .models import MODELS, model as model_entry
 from .run import calibrate, first_token, memory_counters, wait_up
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -57,10 +58,10 @@ PROMPTS = {
 SAMPLING = {0.6: {"top_p": 0.95, "top_k": 20}, 0.0: {}}
 
 
-def tokenizer():
+def tokenizer(model: str):
     from huggingface_hub import hf_hub_download
     from tokenizers import Tokenizer
-    return Tokenizer.from_file(hf_hub_download("Qwen/Qwen3.5-9B", "tokenizer.json"))
+    return Tokenizer.from_file(hf_hub_download(model_entry(model).tokenizer, "tokenizer.json"))
 
 
 def prefill_body() -> str:
@@ -156,7 +157,7 @@ def stream(port: int, model: str, messages: list, max_tokens: int, temperature: 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="solvetime speed", description=__doc__.split("\n\n")[0])
     ap.add_argument("--engine", required=True, choices=sorted(ENGINES))
-    ap.add_argument("--model", required=True)
+    ap.add_argument("--model", required=True, choices=sorted(MODELS), help="the checkpoint (models.py)")
     ap.add_argument("--runs", type=int, default=3)
     ap.add_argument("--port", type=int, default=8891)
     ap.add_argument("--out", default="results")
@@ -168,7 +169,7 @@ def main(argv=None):
     problem = missing(engine)
     if problem:
         sys.exit(problem)
-    tok = tokenizer()
+    tok = tokenizer(args.model)
     os.makedirs(args.out, exist_ok=True)
     path = os.path.join(args.out, time.strftime("speed-%Y%m%d-%H%M%S") + f"-{engine.name}-{args.model}.jsonl")
     meta = {"engine": engine.name, "ours": engine.ours, "version": engine.version(), "model": args.model,

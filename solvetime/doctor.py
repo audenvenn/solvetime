@@ -13,12 +13,14 @@ import platform
 import subprocess
 
 from .engines import ENGINES, missing
+from .models import MODELS, build
 from .sandbox import Sandbox
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="solvetime doctor", description=__doc__.split("\n\n")[0])
-    ap.add_argument("--model", default="qwen3.6-35b-a3b", help="the model the engines' commands are built for")
+    ap.add_argument("--model", default="qwen3.6-35b-a3b", choices=sorted(MODELS),
+                    help="the model whose builds are checked (models.py)")
     args = ap.parse_args(argv)
 
     chip = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"], capture_output=True, text=True).stdout.strip()
@@ -31,7 +33,7 @@ def main(argv=None):
         if problem:
             print(f"  {name:10s} not ready: {problem.split(': ', 1)[-1]}")
         else:
-            print(f"  {name:10s} {engine.version() or '(version unknown)'}")
+            print(f"  {name:10s} {engine.version() or '(version unknown)'}: {build(args.model, name)}")
     print()
     box = Sandbox()
     try:

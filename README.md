@@ -112,6 +112,11 @@ solvetime report results/                      # add --speed for the speed table
 A core × 2 run takes 13-20 minutes per engine on an M6, plus the first model download (10-20 GB).
 `--set extended|all`, `--tasks a,b` and `--thinking no-thinking` select other runs.
 
+The models are `qwen3.6-35b-a3b`, `qwen3.8-27b` and `qwen3.5-9b`. [`solvetime/models.py`](solvetime/models.py)
+holds each one's checkpoint, its card's sampling and every engine's build of it; `solvetime doctor --model
+<model>` shows the builds this Mac has. A variable points an engine at another build (`SOLVETIME_OLLAMA_TAG`,
+`SOLVETIME_MLX_MODEL`, ...; listed there), and a new model is one entry in that file.
+
 Results from M1 to M5 Macs, and from other memory sizes, are the point of the project. To share yours:
 
 ```sh

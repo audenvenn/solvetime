@@ -27,13 +27,14 @@ import tempfile
 from minisweagent.environments.local import LocalEnvironment, _run
 
 HOME = os.path.realpath(os.path.expanduser("~"))
-TASK_VENV = os.environ.get("SOLVETIME_TASK_VENV", os.path.join(HOME, "venvs", "solvetime-tasks"))
+TASK_VENV = os.environ.get("SOLVETIME_TASK_VENV", os.path.join(HOME, ".cache", "solvetime", "task-python"))
 
 
 def task_python() -> str:
     """The bare Python (no pytest, nothing installed) the tasks are written for; created on first use."""
     py = os.path.join(TASK_VENV, "bin", "python3")
     if not os.path.exists(py):
+        os.makedirs(os.path.dirname(TASK_VENV), exist_ok=True)
         uv = shutil.which("uv")
         if uv:
             subprocess.run([uv, "venv", "-q", TASK_VENV, "--python", "3.12"], check=True)
@@ -71,7 +72,14 @@ def _q(path: str) -> str:
 def profile(writable: list[str]) -> str:
     writes = "\n".join(f"  (subpath {_q(os.path.realpath(p))})" for p in writable)
     reads = "\n".join(f"  (subpath {_q(p)})" for p in _python_roots())
-    parents = sorted({os.path.dirname(p) for p in _python_roots()} | {HOME})
+    parents = {HOME}
+    for p in _python_roots():                  # every directory on the way down: its metadata only (lookups
+                                               # and realpath work; listing it does not)
+        d = os.path.dirname(p)
+        while d.startswith(HOME + os.sep) and d not in parents:
+            parents.add(d)
+            d = os.path.dirname(d)
+    parents = sorted(parents)
     literals = "\n".join(f"  (literal {_q(p)})" for p in parents)
     return f"""(version 1)
 (allow default)
@@ -83,7 +91,8 @@ def profile(writable: list[str]) -> str:
   (regex #"^/dev/tty") (regex #"^/dev/fd/"))
 (deny file-read* (subpath {_q(HOME)}))
 (allow file-read*
-{reads}
+{reads})
+(allow file-read-metadata
 {literals})
 """
 

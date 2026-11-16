@@ -28,11 +28,12 @@ import re
 import signal
 import statistics
 import subprocess
+import sys
 import threading
 import time
 import uuid
 
-from .engines import ENGINES
+from .engines import ENGINES, missing
 from .run import calibrate, first_token, memory_counters, wait_up
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -154,6 +155,9 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     engine = ENGINES[args.engine](args.model, args.port)
+    problem = missing(engine)
+    if problem:
+        sys.exit(problem)
     tok = tokenizer()
     os.makedirs(args.out, exist_ok=True)
     path = os.path.join(args.out, time.strftime("speed-%Y%m%d-%H%M%S") + f"-{engine.name}-{args.model}.jsonl")

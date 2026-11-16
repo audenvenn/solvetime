@@ -11,11 +11,13 @@ qwen3.5-9b. `pack()` maps that name to the engine's own build.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass, field
 
 
@@ -119,6 +121,14 @@ print("raceline", raceline.__version__ + (f" ({build})" if build else ""))
 """
 
 
+def _python_beside(exe: str) -> str:
+    """The Python of the environment a console script was installed into (through symlinks, e.g. pipx), so
+    that its package can be imported; this one if there is none."""
+    real = shutil.which(exe) or exe
+    py = os.path.join(os.path.dirname(os.path.realpath(real)), "python")
+    return py if os.path.exists(py) else sys.executable
+
+
 def raceline(model: str, port: int) -> Engine:
     alias = {"qwen3.6-35b-a3b": "qwen3.6-35b-a3b", "qwen3.8-27b": "qwen3.8-27b", "qwen3.5-9b": "qwen3.5-9b"}[model]
     exe = os.environ.get("SOLVETIME_RACELINE", shutil.which("raceline") or "raceline")
@@ -132,7 +142,7 @@ def raceline(model: str, port: int) -> Engine:
     extra = os.environ.get("SOLVETIME_RACELINE_ARGS", "").split()
     return Engine("raceline", model, f"{alias} (FP4, 4.0 bits, with its MTP head)",
                   [exe, "serve", target, "--port", str(port), "--ctx", ctx, *extra],
-                  port, alias, version_command=[os.path.join(os.path.dirname(exe), "python"), "-c", RACELINE_VERSION],
+                  port, alias, version_command=[_python_beside(exe), "-c", RACELINE_VERSION],
                   pack_dir=os.environ.get("SOLVETIME_RACELINE_FILE"), ours=True, settings=" ".join(extra))
 
 
@@ -185,7 +195,7 @@ MTPLX_PACKS = {
 
 def mtplx(model: str, port: int) -> Engine:
     repo = MTPLX_PACKS[model]
-    exe = os.environ.get("SOLVETIME_MTPLX", os.path.join(HOME, "venvs/mtplx/bin/mtplx"))
+    exe = os.environ.get("SOLVETIME_MTPLX", shutil.which("mtplx") or "mtplx")
     return Engine("mtplx", model, repo, [exe, "serve", "--model", repo, "--port", str(port), "--no-auth", "--yes"],
                   port, repo, health_path="/health", version_command=[exe, "--version"],
                   pack_dir=os.path.join(HOME, ".mtplx/models", repo.replace("/", "--")), info=_files_info)
@@ -197,7 +207,8 @@ MLX_PACKS = {"qwen3.5-9b": "mlx-community/Qwen3.5-9B-4bit", "qwen3.8-27b": "mlx-
 
 def mlx_lm(model: str, port: int) -> Engine:
     path = os.environ.get("SOLVETIME_MLX_MODEL", MLX_PACKS[model])
-    py = os.environ.get("SOLVETIME_MLX_PYTHON", "python3")
+    # The Python that has mlx-lm: SOLVETIME_MLX_PYTHON, else this one if mlx-lm is installed beside solvetime.
+    py = os.environ.get("SOLVETIME_MLX_PYTHON") or (sys.executable if importlib.util.find_spec("mlx_lm") else "python3")
     # One cached prompt: a single user's agent only ever extends its one conversation. The server's default keeps
     # the KV caches of several earlier prompts, and with the 27B's 15 GB of weights those outgrow the GPU memory
     # of a 24 GB Mac: the next 4K-token prompt fails with "Insufficient Memory" and the server stops generating.
@@ -215,16 +226,42 @@ def _gguf_info(engine: Engine) -> dict:
 
 def llama_cpp(model: str, port: int) -> Engine:
     """llama.cpp's llama-server on a GGUF (SOLVETIME_GGUF), all layers on the GPU, flash attention, the model's
-    own chat template, and its MTP head as the drafter (--spec-type draft-mtp) when the GGUF carries one."""
+    own chat template, plain decoding. SOLVETIME_LLAMA_SPEC=draft-mtp drafts with the model's MTP head, for a GGUF
+    that carries one (the Qwen3.6-35B-A3B UD-IQ2_XXS GGUF of the first results does not)."""
     gguf = os.environ.get("SOLVETIME_GGUF", "")
     ctx = os.environ.get("SOLVETIME_LLAMA_CTX", "65536")
     command = ["llama-server", "-m", gguf, "--port", str(port), "--host", "127.0.0.1", "-ngl", "999", "-fa", "on",
                "--jinja", "-c", ctx]
-    if os.environ.get("SOLVETIME_LLAMA_SPEC", "draft-mtp") != "none":
-        command += ["--spec-type", os.environ.get("SOLVETIME_LLAMA_SPEC", "draft-mtp")]
+    spec = os.environ.get("SOLVETIME_LLAMA_SPEC", "none")
+    if spec != "none":
+        command += ["--spec-type", spec]
     return Engine("llama.cpp", model, os.path.basename(gguf) or "(set SOLVETIME_GGUF)", command, port,
                   os.path.basename(gguf), health_path="/health", version_command=["llama-server", "--version"],
                   pack_dir=gguf or None, info=_gguf_info)
 
 
 ENGINES = {"raceline": raceline, "kapitsa": kapitsa, "mtplx": mtplx, "mlx-lm": mlx_lm, "llama.cpp": llama_cpp}
+
+INSTALL = {
+    "raceline": "pip install git+https://github.com/audenvenn/raceline (Apple M5 or later), then `raceline pull <model>`; "
+                "or point SOLVETIME_RACELINE at its `raceline` command",
+    "kapitsa": "brew install nace-ai/tap/kapitsa; or point SOLVETIME_KAPITSA at a kapitsa binary",
+    "mtplx": "pip install mtplx; or point SOLVETIME_MTPLX at its `mtplx` command",
+    "mlx-lm": "pip install mlx-lm beside solvetime; or set SOLVETIME_MLX_PYTHON to a Python that has it",
+    "llama.cpp": "brew install llama.cpp",
+}
+
+
+def missing(engine: Engine) -> str | None:
+    """Why this engine cannot start here (not installed, no model file), with how to fix it; None if it can."""
+    exe = engine.command[0]
+    if not (shutil.which(exe) or os.path.isfile(exe)):
+        return f"{engine.name}: `{exe}` not found. Install it: {INSTALL[engine.name]}"
+    if engine.name == "mlx-lm" and subprocess.run([exe, "-c", "import mlx_lm"], capture_output=True).returncode:
+        return f"mlx-lm: {exe} cannot import mlx_lm. {INSTALL['mlx-lm']}"
+    if engine.name == "llama.cpp":
+        gguf = os.environ.get("SOLVETIME_GGUF", "")
+        if not os.path.isfile(gguf):
+            return ("llama.cpp: set SOLVETIME_GGUF to the model's .gguf file"
+                    + (f" ({gguf} does not exist)" if gguf else ""))
+    return None

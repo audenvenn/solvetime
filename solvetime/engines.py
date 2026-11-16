@@ -290,8 +290,60 @@ def ollama(model: str, port: int) -> Engine:
                   clear_env="OLLAMA_")
 
 
+# LM Studio's staff pick for each model (`lms get <key>`; on a Mac, its MLX 4-bit build from lmstudio-community).
+LMSTUDIO_MODELS = {"qwen3.6-35b-a3b": "qwen/qwen3.6-35b-a3b", "qwen3.8-27b": "qwen/qwen3.8-27b",
+                   "qwen3.5-9b": "qwen/qwen3.5-9b"}
+
+
+def _lmstudio_info(engine: "Engine") -> dict:
+    """The loaded model's files (from `lms ps`): size and bits per weight."""
+    lms = engine.env.get("SOLVETIME_LMS", "lms")
+    try:
+        loaded = json.loads(subprocess.run([lms, "ps", "--json"], capture_output=True, text=True, timeout=60).stdout)
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return {}
+    for m in loaded if isinstance(loaded, list) else []:
+        path = m.get("path") or ""
+        root = os.path.join(HOME, ".lmstudio", "models", path) if path and not os.path.isabs(path) else path
+        folder = root if os.path.isdir(root) else os.path.dirname(root)
+        size = text_weight_bytes(folder) or (os.path.getsize(root) if os.path.isfile(root) else None)
+        return {"pack": f"{engine.pack}: {path}", "pack_bytes": size, "weights_bytes": size,
+                "bits_per_weight": bits(size, engine.model)}
+    return {}
+
+
+# From LM Studio's files, not from `lms`: any lms command starts the daemon. The llmster release, and the
+# runtime it picks for each model format with its version.
+LMSTUDIO_VERSION = """
+import json, os
+home = os.path.expanduser("~/.lmstudio")
+releases = sorted(os.listdir(os.path.join(home, "llmster"))) if os.path.isdir(os.path.join(home, "llmster")) else []
+try:
+    prefs = json.load(open(os.path.join(home, ".internal", "backend-preferences-v2.json")))
+    runtimes = [f"{name}@{prefs.get('versions', {}).get(name, '?')} ({fmt})" for fmt, name in prefs.get("formatDefaults", {}).items()]
+except (OSError, ValueError):
+    runtimes = []
+print("lmstudio llmster " + (releases[-1] if releases else "?") + (": " + ", ".join(runtimes) if runtimes else ""))
+"""
+
+
+def lmstudio(model: str, port: int) -> Engine:
+    """LM Studio's headless daemon (llmster) with the newest runtimes it offers, its staff pick for the model
+    (SOLVETIME_LMSTUDIO_MODEL for another), one request at a time, a 65536-token window as the other engines get
+    here. launchers/lmstudio.sh starts a fresh daemon, loads the model, starts the server, and stops them all
+    when the run ends."""
+    lms = os.environ.get("SOLVETIME_LMS", os.path.join(HOME, ".lmstudio", "bin", "lms"))
+    key = os.environ.get("SOLVETIME_LMSTUDIO_MODEL", LMSTUDIO_MODELS[model])
+    ctx = os.environ.get("SOLVETIME_LMSTUDIO_CTX", "65536")
+    launcher = os.path.join(os.path.dirname(os.path.abspath(__file__)), "launchers", "lmstudio.sh")
+    return Engine("lmstudio", model, key, ["/bin/bash", launcher, str(port), key, "solvetime", ctx], port, "solvetime",
+                  env={"SOLVETIME_LMS": lms}, start_timeout=900,
+                  version_command=[sys.executable, "-c", LMSTUDIO_VERSION],
+                  info=_lmstudio_info, settings=f"context {ctx}")
+
+
 ENGINES = {"raceline": raceline, "kapitsa": kapitsa, "mtplx": mtplx, "mlx-lm": mlx_lm, "llama.cpp": llama_cpp,
-           "ollama": ollama}
+           "ollama": ollama, "lmstudio": lmstudio}
 
 INSTALL = {
     "raceline": "pip install git+https://github.com/audenvenn/raceline (Apple M5 or later), then `raceline pull <model>`; "
@@ -301,6 +353,8 @@ INSTALL = {
     "mlx-lm": "pip install mlx-lm beside solvetime; or set SOLVETIME_MLX_PYTHON to a Python that has it",
     "llama.cpp": "brew install llama.cpp",
     "ollama": "brew install ollama (or the Ollama app); then `ollama pull <tag>` with a server running",
+    "lmstudio": "curl -fsSL https://lmstudio.ai/install.sh | bash (LM Studio's headless daemon, with `lms`), then "
+                "`lms get <model>`; or point SOLVETIME_LMS at an `lms`",
 }
 
 
@@ -314,7 +368,7 @@ def harness_version() -> str:
 
 def missing(engine: Engine) -> str | None:
     """Why this engine cannot start here (not installed, no model file), with how to fix it; None if it can."""
-    exe = engine.command[0]
+    exe = engine.env.get("SOLVETIME_LMS", engine.command[0]) if engine.name == "lmstudio" else engine.command[0]
     if not (shutil.which(exe) or os.path.isfile(exe)):
         return f"{engine.name}: `{exe}` not found. Install it: {INSTALL[engine.name]}"
     if engine.name == "mlx-lm" and subprocess.run([exe, "-c", "import mlx_lm"], capture_output=True).returncode:

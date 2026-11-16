@@ -292,7 +292,7 @@ def main(argv=None):
     log = open(os.path.join(out_dir, "engine.log"), "w")
     t_start = time.monotonic()
     proc = subprocess.Popen(engine.command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
-                            env=dict(os.environ, **engine.env))
+                            env=engine.server_env())
     print(f"{engine.name} {meta['version']}: {engine.pack} | starting", flush=True)
     problem = wait_up(f"http://127.0.0.1:{engine.port}{engine.health_path}", proc, engine.start_timeout)
     try:

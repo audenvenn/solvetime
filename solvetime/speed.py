@@ -179,7 +179,7 @@ def main(argv=None):
     meta["available_before_start"] = system_available()   # before the engine starts: the baseline
     t_start = time.monotonic()
     proc = subprocess.Popen(engine.command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
-                            env=dict(os.environ, **engine.env))
+                            env=engine.server_env())
     try:
         problem = wait_up(f"http://127.0.0.1:{engine.port}{engine.health_path}", proc, engine.start_timeout)
         if problem:

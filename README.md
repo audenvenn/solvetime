@@ -105,9 +105,18 @@ solvetime report results/                      # add --speed for the speed table
 ```
 
 A core × 2 run takes 13-20 minutes per engine on an M6, plus the first model download (10-20 GB).
-`--set extended|all`, `--tasks a,b` and `--thinking no-thinking` select other runs. A command to bundle a
-run for submission, and a template for results from other Macs, are coming this week; results from M1 to M5
-Macs, and from other memory sizes, are the point of the project.
+`--set extended|all`, `--tasks a,b` and `--thinking no-thinking` select other runs.
+
+Results from M1 to M5 Macs, and from other memory sizes, are the point of the project. To share yours:
+
+```sh
+solvetime submit results/          # one .tar.gz; home paths, host names, emails and your name replaced
+solvetime validate <bundle>        # replays every attempt's commands in the sandbox and re-scores it
+```
+
+Then open a [Results from your Mac](../../issues/new/choose) issue with the bundle. Every attempt published
+here was replayed and re-scored the same way, and all 128 match what was recorded:
+`solvetime validate published/2026-11-qwen3.6-35b-a3b-m6-24gb` reruns that check in about 90 seconds.
 
 ## The tasks
 

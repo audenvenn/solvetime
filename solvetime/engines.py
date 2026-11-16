@@ -11,6 +11,7 @@ qwen3.5-9b. `pack()` maps that name to the engine's own build.
 
 from __future__ import annotations
 
+import glob
 import importlib.util
 import json
 import os
@@ -19,6 +20,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
 
 
@@ -290,8 +292,99 @@ def ollama(model: str, port: int) -> Engine:
                   clear_env="OLLAMA_")
 
 
+# LM Studio's staff pick for each model (`lms get <key>`; on a Mac, its MLX 4-bit build from lmstudio-community).
+LMSTUDIO_MODELS = {"qwen3.6-35b-a3b": "qwen/qwen3.6-35b-a3b", "qwen3.8-27b": "qwen/qwen3.8-27b",
+                   "qwen3.5-9b": "qwen/qwen3.5-9b"}
+
+
+def _lmstudio_info(engine: "Engine") -> dict:
+    """The loaded model's files: `lms ls` names its key, size and variant (e.g. qwen/qwen3.5-4b@4bit); its folder
+    under ~/.lmstudio/models is the one named after the model and the variant (lmstudio-community/Qwen3.5-4B-MLX-4bit).
+    Bits per weight from that folder's weights (vision tower excluded)."""
+    lms = engine.env.get("SOLVETIME_LMS", "lms")
+    try:
+        listed = json.loads(subprocess.run([lms, "ls", "--json"], capture_output=True, text=True, timeout=60).stdout)
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return {}
+    entry = next((m for m in listed if isinstance(m, dict) and m.get("modelKey") == engine.pack), None)
+    if not entry:
+        return {}
+    variant = (entry.get("selectedVariant") or "").partition("@")[2].lower()
+    name = engine.pack.split("/")[-1].lower()
+    root = os.path.join(HOME, ".lmstudio", "models")
+    folders = [d for d in sorted(glob.glob(os.path.join(root, "*", "*"))) if os.path.isdir(d)
+               and name in os.path.basename(d).lower() and (not variant or variant in os.path.basename(d).lower())]
+    folder = folders[0] if folders else None
+    weights = text_weight_bytes(folder) if folder else None
+    return {"pack": engine.pack + (f" ({os.path.relpath(folder, root)})" if folder else ""),
+            "pack_bytes": entry.get("sizeBytes"), "weights_bytes": weights,
+            "bits_per_weight": bits(weights or entry.get("sizeBytes"), engine.model)}
+
+
+# From LM Studio's files, not from `lms`: any lms command starts the daemon. The llmster release, and the
+# runtime it picks for each model format with its version.
+LMSTUDIO_VERSION = """
+import json, os
+home = os.path.expanduser("~/.lmstudio")
+releases = sorted(os.listdir(os.path.join(home, "llmster"))) if os.path.isdir(os.path.join(home, "llmster")) else []
+try:
+    prefs = json.load(open(os.path.join(home, ".internal", "backend-preferences-v2.json")))
+    runtimes = [f"{name}@{prefs.get('versions', {}).get(name, '?')} ({fmt})" for fmt, name in prefs.get("formatDefaults", {}).items()]
+except (OSError, ValueError):
+    runtimes = []
+print("lmstudio llmster " + (releases[-1] if releases else "?") + (": " + ", ".join(runtimes) if runtimes else ""))
+"""
+
+
+def lmstudio(model: str, port: int) -> Engine:
+    """LM Studio's headless daemon (llmster) with the newest runtimes it offers, its staff pick for the model
+    (SOLVETIME_LMSTUDIO_MODEL for another), one request at a time, a 65536-token window as the other engines get
+    here. launchers/lmstudio.sh starts a fresh daemon, loads the model, starts the server, and stops them all
+    when the run ends."""
+    lms = os.environ.get("SOLVETIME_LMS", os.path.join(HOME, ".lmstudio", "bin", "lms"))
+    key = os.environ.get("SOLVETIME_LMSTUDIO_MODEL", LMSTUDIO_MODELS[model])
+    ctx = os.environ.get("SOLVETIME_LMSTUDIO_CTX", "65536")
+    launcher = os.path.join(os.path.dirname(os.path.abspath(__file__)), "launchers", "lmstudio.sh")
+    return Engine("lmstudio", model, key, ["/bin/bash", launcher, str(port), key, "solvetime", ctx], port, "solvetime",
+                  env={"SOLVETIME_LMS": lms}, start_timeout=900,
+                  version_command=[sys.executable, "-c", LMSTUDIO_VERSION],
+                  info=_lmstudio_info, settings=f"context {ctx}")
+
+
+def _hf_snapshot(repo: str) -> str | None:
+    """A Hugging Face repo's local snapshot, if it is already downloaded (nothing is fetched)."""
+    try:
+        from huggingface_hub import snapshot_download
+        return snapshot_download(repo_id=repo, local_files_only=True)
+    except Exception:
+        return None
+
+
+def omlx(model: str, port: int) -> Engine:
+    """oMLX (`omlx serve`, headless) on the same MLX 4-bit weights as mlx-lm (SOLVETIME_OMLX_MODEL: a model folder),
+    with its own defaults otherwise: memory guard "balanced", no SSD cache, its default speculation. It loads
+    models from a directory of model folders, so the folder is linked into a directory of its own."""
+    exe = os.environ.get("SOLVETIME_OMLX", shutil.which("omlx") or "omlx")
+    src = os.environ.get("SOLVETIME_OMLX_MODEL") or MLX_PACKS[model]
+    folder = os.path.realpath(src) if os.path.isdir(src) else (_hf_snapshot(src) or src)
+    name = os.path.basename(src.rstrip("/"))
+    models = os.path.join(tempfile.gettempdir(), f"solvetime-omlx-models-{port}")
+    if os.path.isdir(folder):
+        os.makedirs(models, exist_ok=True)
+        link = os.path.join(models, name)
+        if os.path.islink(link) and os.readlink(link) != folder:
+            os.remove(link)
+        if not os.path.exists(link):
+            os.symlink(folder, link)
+    return Engine("omlx", model, src,
+                  [exe, "serve", "--model-dir", models, "--headless", "--host", "127.0.0.1", "--port", str(port)],
+                  port, name, env={"OMLX_PORT": str(port)}, clear_env="OMLX_",
+                  version_command=[exe, "--version"], pack_dir=folder if os.path.isdir(folder) else None,
+                  info=_files_info, start_timeout=900)
+
+
 ENGINES = {"raceline": raceline, "kapitsa": kapitsa, "mtplx": mtplx, "mlx-lm": mlx_lm, "llama.cpp": llama_cpp,
-           "ollama": ollama}
+           "ollama": ollama, "lmstudio": lmstudio, "omlx": omlx}
 
 INSTALL = {
     "raceline": "pip install git+https://github.com/audenvenn/raceline (Apple M5 or later), then `raceline pull <model>`; "
@@ -301,6 +394,10 @@ INSTALL = {
     "mlx-lm": "pip install mlx-lm beside solvetime; or set SOLVETIME_MLX_PYTHON to a Python that has it",
     "llama.cpp": "brew install llama.cpp",
     "ollama": "brew install ollama (or the Ollama app); then `ollama pull <tag>` with a server running",
+    "lmstudio": "curl -fsSL https://lmstudio.ai/install.sh | bash (LM Studio's headless daemon, with `lms`), then "
+                "`lms get <model>`; or point SOLVETIME_LMS at an `lms`",
+    "omlx": "brew tap jundot/omlx https://github.com/jundot/omlx && brew install jundot/omlx/omlx; or point "
+            "SOLVETIME_OMLX at an `omlx`",
 }
 
 
@@ -314,13 +411,16 @@ def harness_version() -> str:
 
 def missing(engine: Engine) -> str | None:
     """Why this engine cannot start here (not installed, no model file), with how to fix it; None if it can."""
-    exe = engine.command[0]
+    exe = engine.env.get("SOLVETIME_LMS", engine.command[0]) if engine.name == "lmstudio" else engine.command[0]
     if not (shutil.which(exe) or os.path.isfile(exe)):
         return f"{engine.name}: `{exe}` not found. Install it: {INSTALL[engine.name]}"
     if engine.name == "mlx-lm" and subprocess.run([exe, "-c", "import mlx_lm"], capture_output=True).returncode:
         return f"mlx-lm: {exe} cannot import mlx_lm. {INSTALL['mlx-lm']}"
     if engine.name == "ollama" and not os.path.isfile(_ollama_manifest(engine.api_model)):
         return f"ollama: {engine.api_model} is not pulled. `ollama pull {engine.api_model}` (with `ollama serve` running)"
+    if engine.name == "omlx" and not engine.pack_dir:
+        return (f"omlx: {engine.pack} is not on this Mac. Download it (`hf download {engine.pack}`), or set "
+                "SOLVETIME_OMLX_MODEL to an MLX model folder")
     if engine.name == "llama.cpp":
         gguf = os.environ.get("SOLVETIME_GGUF", "")
         if not os.path.isfile(gguf):

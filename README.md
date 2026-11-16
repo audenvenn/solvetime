@@ -29,9 +29,10 @@ What we learned:
 - **Synthetic speed tests point the wrong way here.** Our own engine looked faster in a 4K-prompt speed test
   (prefill 1268-1333 vs 1091 tok/s) and solved about as many tasks as the fixed kapitsa build (30/32 vs
   28/32; at this sample size the two can't be told apart). But it took 1.45x as long end to end. In agent use
-  each tool output adds a few hundred new tokens that route to most of the model's 256 experts, so raceline
-  reads them from the SSD again and again. Its prefill during the runs was 420 tok/s against kapitsa's 925.
-  The synthetic prompt spread that cost over 4,000 tokens.
+  each tool output adds a few hundred new tokens that route to most of the model's 256 experts, and the ones
+  raceline keeps on the SSD (29% at its default) are read again for every such chunk: its prefill during the
+  runs was 420 tok/s (306 with a smaller expert cache) against kapitsa's 925. The synthetic prompt spread
+  that cost over 4,000 tokens.
 - **24 GB is tight.** With ordinary apps open (about 5-6 GB), an engine holding 17-19 GB leaves little room:
   one overnight run of a dense 27B pushed memory pressure to critical. Close other large apps before you
   measure.
@@ -58,8 +59,9 @@ exceed the memory Metal lets the GPU use).
 
 - The agent is [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent) 2.4.6 (MIT) with its default
   prompts and one bash tool. It is not ours and favours no engine.
-- Each engine runs the build it recommends or picks for the Mac at hand, with its default settings; the
-  build, its bits per weight and any setting beyond the defaults appear in every table. "Does not fit" is a
+- Each engine runs the build it recommends or picks for the Mac at hand, with its default settings
+  (llama.cpp, which picks none, gets the GGUF kapitsa picks, as a control); the build, its bits per weight
+  and any setting beyond the defaults appear in every table. "Does not fit" is a
   result too, and the tables say how it was determined.
 - Every engine gets the same tasks, prompts, sampling (the model card's) and limits: 50 steps and 15
   minutes per attempt.
@@ -102,7 +104,7 @@ solvetime speed --engine kapitsa --model qwen3.6-35b-a3b
 solvetime report results/                      # add --speed for the speed tables
 ```
 
-A core × 2 run takes 13-26 minutes per engine on an M6, plus the first model download (10-20 GB).
+A core × 2 run takes 13-20 minutes per engine on an M6, plus the first model download (10-20 GB).
 `--set extended|all`, `--tasks a,b` and `--thinking no-thinking` select other runs. A command to bundle a
 run for submission, and a template for results from other Macs, are coming this week; results from M1 to M5
 Macs, and from other memory sizes, are the point of the project.

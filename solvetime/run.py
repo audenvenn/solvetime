@@ -191,7 +191,10 @@ def attempt(engine: Engine, proxy: Proxy, task: dict, number: int, out_dir: str,
     import yaml
     from minisweagent import package_dir
     from minisweagent.agents.default import DefaultAgent
+    import litellm
     from minisweagent.models.litellm_model import LitellmModel
+
+    litellm.suppress_debug_info = True   # no "Provider List" / "Give Feedback" lines in the output
 
     config = yaml.safe_load(open(os.path.join(package_dir, "config", "mini.yaml")))
     box = Sandbox()

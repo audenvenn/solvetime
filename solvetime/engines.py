@@ -252,6 +252,14 @@ INSTALL = {
 }
 
 
+def harness_version() -> str:
+    """solvetime's own version: the package version, and the commit when it runs from a git checkout."""
+    from . import __version__
+    here = os.path.dirname(os.path.abspath(__file__))
+    r = subprocess.run(["git", "-C", here, "describe", "--tags", "--always", "--dirty"], capture_output=True, text=True)
+    return __version__ + (f" ({r.stdout.strip()})" if r.returncode == 0 and r.stdout.strip() else "")
+
+
 def missing(engine: Engine) -> str | None:
     """Why this engine cannot start here (not installed, no model file), with how to fix it; None if it can."""
     exe = engine.command[0]

@@ -18,6 +18,7 @@ import os
 import subprocess
 
 from . import report, speed
+from .engines import harness_version
 
 HOME = os.path.expanduser("~")
 
@@ -51,12 +52,6 @@ def describe_sampling(s: dict) -> str:
     return ", ".join(parts)
 
 
-def harness_version() -> str:
-    here = os.path.dirname(os.path.abspath(__file__))
-    r = subprocess.run(["git", "-C", here, "describe", "--tags", "--always", "--dirty"], capture_output=True, text=True)
-    return r.stdout.strip() or "unknown"
-
-
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="solvetime publish", description=__doc__.split("\n\n")[0])
     ap.add_argument("results")
@@ -65,6 +60,7 @@ def main(argv=None):
     ap.add_argument("--speed", nargs="*", default=["speed-*.jsonl"], help="patterns of speed result names")
     ap.add_argument("--notes", help="JSON list of engines that were not run, and why")
     ap.add_argument("--title", default="Results")
+    ap.add_argument("--about", help="a Markdown file about these runs, placed after the summary line")
     args = ap.parse_args(argv)
 
     os.makedirs(args.out, exist_ok=True)
@@ -104,7 +100,9 @@ def main(argv=None):
         sampling = sorted({describe_sampling(m.get("sampling") or {}) for m in metas})
         lines += [f"Runs from {first} to {last}. Agent: {', '.join(agents)}; limits: {metas[0].get('step_limit')} "
                   f"steps and {metas[0].get('wall_seconds')} s per attempt. Sampling sent with every request: "
-                  f"{'; '.join(sampling)}. Harness: solvetime {harness_version()}.", ""]
+                  f"{'; '.join(sampling)}. Tables made with solvetime {harness_version()}.", ""]
+    if args.about:
+        lines += [open(args.about).read().strip(), ""]
     lines += ["## Agent tasks, each engine build pooled over its task sets", "",
               "Solved with a 95% Wilson interval. \"Ended by malformed output\": the attempt stopped after three "
               "replies in a row that the agent could not use (no tool call). \"Replies without a tool call\" counts "
@@ -114,6 +112,13 @@ def main(argv=None):
               "Two-sided Fisher exact tests. With a few dozen attempts per engine, only large differences reach "
               "p < 0.05; a larger p means the counts cannot tell the two apart, not that they are equal.", "",
               report.pairwise_table(root), "",
+              "## Time", "",
+              "Total time: the attempts end to end (agent, sandbox and engine). Per solved task: total time over "
+              "tasks solved. Time in the engine: the requests themselves. Decode and prefill during the run: from "
+              "each engine's own log, medians over the requests that wrote at least 64 tokens and that read at "
+              "least 256 new tokens. A run with settings beyond the defaults has times that compare with nothing "
+              "else.", "",
+              report.time_table(root), "",
               "## Each run", "",
               "Peak footprint is the engine's phys_footprint, which leaves out clean memory-mapped pages: it "
               "understates an engine that maps its weights from the file. To compare memory across engines, use "

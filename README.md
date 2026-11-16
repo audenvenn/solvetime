@@ -95,6 +95,11 @@ Needs macOS on Apple silicon and Python 3.10 or later. Install the engines you w
 | llama.cpp | `brew install llama.cpp`, plus the GGUF named in the results, passed as `SOLVETIME_GGUF=/path/to.gguf` |
 | mtplx | `pip install mtplx` |
 | mlx-lm | `pip install mlx-lm` |
+| ollama | `brew install ollama`, then `ollama pull qwen3.8:27b` (solvetime starts its own server) |
+| lmstudio | `curl -fsSL https://lmstudio.ai/install.sh \| bash` (the headless daemon with `lms`), then `lms get qwen/qwen3.8-27b` |
+| omlx | `brew tap jundot/omlx https://github.com/jundot/omlx && brew install jundot/omlx/omlx`, plus an MLX model folder in `SOLVETIME_OMLX_MODEL` |
+
+On a 24 GB Mac none of the last three can load the 35B; they are for the 27B and smaller models. Ollama picks a 4096-token context there by default, which would cut an agent's conversation without saying so, so solvetime gives it 65536, as it does llama.cpp, and the tables show the setting.
 
 ```sh
 pip install git+https://github.com/audenvenn/solvetime

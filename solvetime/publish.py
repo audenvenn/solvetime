@@ -109,7 +109,10 @@ def main(argv=None):
     lines += ["## Agent tasks, each engine build pooled over its task sets", "",
               "Solved with a 95% Wilson interval. \"Ended by malformed output\": the attempt stopped after three "
               "replies in a row that the agent could not use (no tool call). \"Replies without a tool call\" counts "
-              "every such reply, recovered or not, out of all replies.", "",
+              "every such reply, recovered or not, out of all replies. \"Available at start\": the memory macOS could "
+              "hand out just before the engine started (vm_stat: free, inactive, speculative and purgeable pages); the rest "
+              "was in use by macOS and the other open programs. On a 24 GB Mac it decides whether a 15-19 GB build fits. "
+              "Runs made before 2026-11-18 did not record it.", "",
               report.pooled_table(root, notes), "",
               "## Pairwise differences", "",
               "Two-sided Fisher exact tests. With a few dozen attempts per engine, only large differences reach "

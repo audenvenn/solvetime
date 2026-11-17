@@ -76,6 +76,8 @@ def first_token(port: int, model: str, messages: list, extra: dict | None = None
     t0 = time.monotonic()
     conn.request("POST", "/v1/chat/completions", json.dumps(body), {"Content-Type": "application/json"})
     resp = conn.getresponse()
+    if resp.status != 200:   # an error is not an empty reply (e.g. oMLX's 507: the model does not fit its memory guard)
+        raise RuntimeError(f"HTTP {resp.status}: {resp.read()[:400].decode('utf-8', 'replace')}")
     first, content, reasoning = None, "", ""
     for raw in resp:
         line = raw.decode("utf-8", "ignore").strip()
@@ -104,7 +106,7 @@ def thinking_switch(port: int, model: str, no_thinking: dict | None = None) -> s
         _, c_off, r_off = first_token(port, model, q, {"chat_template_kwargs": {"enable_thinking": False},
                                                        **(no_thinking or {})}, 64)
         _, c_on, r_on = first_token(port, model, q, {"chat_template_kwargs": {"enable_thinking": True}}, 64)
-    except (OSError, http.client.HTTPException) as e:
+    except (OSError, http.client.HTTPException, RuntimeError) as e:
         return f"probe failed: {e}"
     off = bool(r_off) or "<think>" in c_off
     on = bool(r_on) or "<think>" in c_on
@@ -312,8 +314,12 @@ def main(argv=None):
             ttft, _, _ = first_token(engine.port, engine.api_model, [{"role": "user", "content": "Say hello."}])
             meta["cold_start_seconds"] = round(time.monotonic() - t_start - 0.0, 2)
             meta["warmup_first_token_seconds"] = round(ttft, 2)
-        except (OSError, http.client.HTTPException) as e:
-            meta["warmup_error"] = str(e)
+        except (OSError, http.client.HTTPException, RuntimeError) as e:
+            # An engine that cannot answer "Say hello." cannot run the tasks either: its attempts would only fail
+            # the same way, slowly (the agent retries each request for minutes). Recorded as not starting.
+            meta["load_failure"] = f"its first request failed: {e}"[:600]
+            print(f"does not start: {meta['load_failure']}", flush=True)
+            return
         meta["thinking_switch"] = thinking_switch(engine.port, engine.api_model, engine.no_thinking)
         overrides = sampling(args.model, args.thinking)
         meta["overrides_sent"] = {k: v for k, v in overrides.__dict__.items() if v is not None}

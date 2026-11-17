@@ -6,8 +6,11 @@ Runs from 2026-11-15 20:59:43 to 2026-11-16 10:28:16. Agent: mini-swe-agent 2.4.
 ## About these runs
 
 - **Machine.** Mac mini (2026), Apple M6 with a 12-core GPU, 24 GB, macOS 27.2, on AC power. The usual
-  background was open throughout (a few terminal sessions, two browsers, an IDE: about 5 to 6 GB), and
-  nothing else heavy ran during a measurement, except where a row says otherwise.
+  background was open throughout (a few terminal sessions, two browsers, an IDE), and nothing else heavy
+  ran during a measurement, except where a row says otherwise. Corrected on 2026-11-17: we first put that
+  background at about 5 to 6 GB. With macOS it came to about 7-10 GB, active cached files included: a
+  later reading with nothing of ours running found 16.2 GB of the Mac's 25.8 GB (24 GiB) available, so
+  9.6 GB in use.
 - **Builds.**
   - raceline: main at 3de235d, recorded as `raceline 0.7.1 (v0.7.1-6-g3de235d)` and released unchanged as
     0.8.0 (0.8.0 adds only the version number and the changelog). The model file is
@@ -32,6 +35,20 @@ Runs from 2026-11-15 20:59:43 to 2026-11-16 10:28:16. Agent: mini-swe-agent 2.4.
 - **Harness.** solvetime from 2026-11-15 (PR #1) to 2026-11-16 (#6) ran the agent tasks, and #10/#11 ran
   the speed tests. The agent (mini-swe-agent 2.4.6), its prompts and limits, the sampling and the checks
   did not change across those versions. Runs before 22:00 on 2026-11-15 did not yet keep the raw replies.
+- **A harness defect, found after publication.** Before starting each engine, solvetime measured the GPU
+  (`calibrate`) inside the harness's process, and MLX kept about 3.5 GB of that work there for the rest of
+  the run, most of it zero- and one-filled buffers that macOS can compress under pressure. Every run on
+  this page had it, the same for every engine, and it left each engine less room than this page first
+  implied. It likely cost raceline more than kapitsa. raceline sizes its expert cache from the GPU's
+  working-set limit, not from free memory, so the cache was the same; but the experts outside it are read
+  through macOS's file cache, which the defect left less room, while kapitsa's 2-bit pack is fully
+  resident. The time comparison (raceline 1.45x kapitsa main's total time) may overstate the gap; it was
+  not remeasured. It also made the "Memory taken (system)" column read low for every engine: kapitsa's
+  and raceline's own footprints exceed their "memory taken" by 2.3-4.3 GB, because memory counted as in
+  use when the test started became available while it ran. Read the footprints for what each engine
+  holds; llama.cpp's memory-mapped weights sit outside its footprint (4.5 GB footprint, 15.1 GB RSS).
+  Fixed in [#27](https://github.com/audenvenn/solvetime/pull/27): the calibration now runs in a process
+  that exits before the engine starts, and each run records the memory available at its start.
 - **raceline's extended run** used `--expert-cache 8`: 8 GB of experts in memory instead of the 11.5 GB it
   picks itself. During the night, the dense 27B had pushed memory pressure to critical, and the smaller
   cache leaves the Mac more room. The cache changes where experts are read from, not what the model
@@ -93,7 +110,7 @@ Total time: the attempts end to end (agent, sandbox and engine). Per solved task
 
 ## Each run
 
-Peak footprint is the engine's phys_footprint, which leaves out clean memory-mapped pages: it understates an engine that maps its weights from the file. To compare memory across engines, use the speed section's memory taken from the system.
+Peak footprint is the engine's phys_footprint, which leaves out clean memory-mapped pages: it understates an engine that maps its weights from the file. To compare memory across engines, use the footprints for raceline and kapitsa and the RSS for llama.cpp, which maps its weights from the file; the speed section's "memory taken" reads low for every engine (see "A harness defect" above).
 
 | Model | Engine | Build | Settings | Bits per weight | Size | Peak footprint | Cold start | Solved | Median time, solved attempts | Total time per solved task | Total time | Tokens written (median) | Requests (median) | Failures | Paged out |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -109,7 +126,7 @@ Peak footprint is the engine's phys_footprint, which leaves out clean memory-map
 
 ## Speed
 
-`solvetime speed`: thinking off, after one uncounted warm-up; prefill on a 4K-token prompt, decode of up to 512 tokens on two prompts, three runs each (median, range). Memory taken (system): what the system had available before the engine started, minus the least it had while the engine ran (free, inactive, speculative and purgeable pages), on an otherwise quiet machine.
+`solvetime speed`: thinking off, after one uncounted warm-up; prefill on a 4K-token prompt, decode of up to 512 tokens on two prompts, three runs each (median, range). Memory taken (system): what the system had available before the engine started, minus the least it had while the engine ran (free, inactive, speculative and purgeable pages), on an otherwise quiet machine. It reads a few GB low for every engine; see "A harness defect" above.
 
 | Model | Engine | Bits per weight | Prefill 4K | Write T 0.6 | Write T 0 | Continue T 0.6 | Continue T 0 | Memory taken (system) | RSS | Footprint | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|

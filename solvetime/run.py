@@ -140,26 +140,53 @@ def memory_counters() -> dict:
     return {"swap_used_mb": float(m.group(1)) if m else None, "pageouts": int(po.group(1)) if po else None}
 
 
-def calibrate() -> dict:
-    """A fixed GPU workload (MLX, when installed): a float16 matmul and a large copy."""
-    try:
-        import mlx.core as mx
-    except ImportError:
-        return {"calibration": "mlx not installed"}
-    a = mx.random.normal((4096, 4096)).astype(mx.float16)
-    b = mx.random.normal((4096, 4096)).astype(mx.float16)
+# A fixed GPU workload, the same for every run: a float16 matmul and a large copy. It runs in a process of its own:
+# MLX keeps the ~3.5 GB it used cached afterwards (clear_cache() empties the cache but the process keeps its pages),
+# and in this process that memory would stay taken from the engine for the whole run.
+CALIBRATE = """
+import json, time
+try:
+    import mlx.core as mx
+except ImportError:
+    print(json.dumps({"calibration": "mlx not installed"}))
+    raise SystemExit
+a = mx.random.normal((4096, 4096)).astype(mx.float16)
+b = mx.random.normal((4096, 4096)).astype(mx.float16)
+mx.eval(a @ b)
+t0 = time.monotonic()
+for _ in range(20):
     mx.eval(a @ b)
-    t0 = time.monotonic()
-    for _ in range(20):
-        mx.eval(a @ b)
-    tflops = 20 * 2 * 4096 ** 3 / (time.monotonic() - t0) / 1e12
-    x = mx.zeros((256 * 2 ** 20,), dtype=mx.float32)
+tflops = 20 * 2 * 4096 ** 3 / (time.monotonic() - t0) / 1e12
+x = mx.zeros((256 * 2 ** 20,), dtype=mx.float32)
+mx.eval(x + 1)
+t0 = time.monotonic()
+for _ in range(10):
     mx.eval(x + 1)
-    t0 = time.monotonic()
-    for _ in range(10):
-        mx.eval(x + 1)
-    gbps = 10 * 2 * x.nbytes / (time.monotonic() - t0) / 1e9
-    return {"calibration_fp16_matmul_tflops": round(tflops, 2), "calibration_copy_gb_s": round(gbps, 1)}
+gbps = 10 * 2 * x.nbytes / (time.monotonic() - t0) / 1e9
+print(json.dumps({"calibration_fp16_matmul_tflops": round(tflops, 2), "calibration_copy_gb_s": round(gbps, 1)}))
+"""
+
+
+def memory_at_start() -> dict:
+    """What the Mac has in use before the engine starts (vm_stat, bytes). "available" is what the system could hand
+    out (free, inactive, speculative and purgeable pages), as the speed test counts it; the rest of it is in use by
+    macOS and the other open programs: their own memory, wired memory, the compressor, and cached files."""
+    out = subprocess.run(["vm_stat"], capture_output=True, text=True).stdout
+    size = int(re.search(r"page size of (\d+) bytes", out).group(1))
+    v = {k.strip(): int(n) * size for k, n in re.findall(r"^(.+?):\s+(\d+)\.", out, re.M)}
+    return {"available": sum(v.get(k, 0) for k in ("Pages free", "Pages inactive", "Pages speculative", "Pages purgeable")),
+            "apps": v.get("Anonymous pages"), "wired": v.get("Pages wired down"),
+            "compressed": v.get("Pages occupied by compressor"), "cached_files": v.get("File-backed pages")}
+
+
+def calibrate() -> dict:
+    """The GPU's speed on a fixed workload (MLX, when installed), measured in a process that ends before the engine
+    starts, so that none of its memory is held during the run."""
+    try:
+        out = subprocess.run([sys.executable, "-c", CALIBRATE], capture_output=True, text=True, timeout=300)
+        return json.loads(out.stdout.strip().splitlines()[-1])
+    except (OSError, subprocess.TimeoutExpired, ValueError, IndexError) as e:
+        return {"calibration": f"failed: {e}"[:200]}
 
 
 def repeats(rows: list[dict], messages: list[dict]) -> dict:
@@ -299,6 +326,7 @@ def main(argv=None):
             "sampling": sampling(args.model, args.thinking).__dict__, "agent": "mini-swe-agent " + _mini_version(),
             "step_limit": STEP_LIMIT, "wall_seconds": WALL_SECONDS, "mac": _mac(), "started": time.strftime("%F %T"),
             "tasks": names, "attempts": args.attempts, **calibrate(), "memory_before": memory_counters()}
+    meta["memory_at_start"] = memory_at_start()   # after the calibration's process has ended, before the engine starts
     log = open(os.path.join(out_dir, "engine.log"), "w")
     t_start = time.monotonic()
     proc = subprocess.Popen(engine.command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,

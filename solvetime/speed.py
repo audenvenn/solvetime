@@ -35,7 +35,7 @@ import uuid
 
 from .engines import ENGINES, harness_version, missing
 from .models import MODELS, model as model_entry
-from .run import calibrate, first_token, memory_counters, wait_up
+from .run import calibrate, first_token, memory_at_start, memory_counters, wait_up
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROMPTS = {
@@ -178,6 +178,7 @@ def main(argv=None):
     out = open(path, "w")
     log = open(path.replace(".jsonl", ".engine.log"), "w")
     meta["available_before_start"] = system_available()   # before the engine starts: the baseline
+    meta["memory_at_start"] = memory_at_start()
     t_start = time.monotonic()
     proc = subprocess.Popen(engine.command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
                             env=engine.server_env())

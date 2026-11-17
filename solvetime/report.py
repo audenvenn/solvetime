@@ -92,11 +92,14 @@ def groups(root: str, notes: list | None = None):
             continue
         key = (meta["model"], meta["engine"], meta.get("version"), meta["pack"])
         g = out.setdefault(key, {"meta": meta, "attempts": [], "sets": set(), "no_call": 0, "cut_off": 0,
-                                 "replies": 0, "runs": [], "settings": []})
+                                 "replies": 0, "runs": [], "settings": [], "available": []})
         if (meta.get("settings") or "defaults") not in g["settings"]:
             g["settings"].append(meta.get("settings") or "defaults")
         run_dir = meta["_dir"]
         g["runs"].append(os.path.basename(run_dir))
+        available = (meta.get("memory_at_start") or {}).get("available")
+        if available:
+            g["available"].append(available)
         for a in attempts:
             g["attempts"].append(a)
             g["sets"].add(a["set"])
@@ -166,12 +169,20 @@ def time_table(root: str) -> str:
     return "\n".join(lines) + "\n"
 
 
+def gb_range(values: list) -> str:
+    """"12.3 GB", or "11.0-12.3 GB" over several runs; "" when none was recorded."""
+    if not values:
+        return ""
+    lo, hi = min(values) / 1e9, max(values) / 1e9
+    return f"{lo:.1f} GB" if hi - lo < 0.05 else f"{lo:.1f}-{hi:.1f} GB"
+
+
 def pooled_table(root: str, notes: list | None = None) -> str:
     """One row per model and engine build, every task set pooled; engines that were not run, and why."""
-    lines = ["| Model | Engine | Build | Settings | Bits per weight | Tasks | Solved | Ended by malformed output | "
-             "Replies without a tool call | Replies cut off at the token limit | Median time, solved attempts | "
-             "Other failures |",
-             "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    lines = ["| Model | Engine | Build | Settings | Bits per weight | Available at start | Tasks | Solved | "
+             "Ended by malformed output | Replies without a tool call | Replies cut off at the token limit | "
+             "Median time, solved attempts | Other failures |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for (model, engine, version, pack), g in groups(root).items():
         att = g["attempts"]
         n, solved = len(att), sum(a["solved"] for a in att)
@@ -183,14 +194,14 @@ def pooled_table(root: str, notes: list | None = None) -> str:
         secs = [a["seconds"] for a in att if a["solved"]]
         tasks = len({a["task"] for a in att})
         lines.append(f"| {model} | {engine_name(g['meta'])} | {pack} | {'; '.join(g['settings'])} | "
-                     f"{g['meta'].get('bits_per_weight') or ''} | "
+                     f"{g['meta'].get('bits_per_weight') or ''} | {gb_range(g['available'])} | "
                      f"{tasks} ({', '.join(sorted(g['sets']))}) | {pct(solved, n)} | {malformed}/{n} | "
                      f"{g['no_call']} of {g['replies']} | {g['cut_off']} | "
                      f"{f'{statistics.median(secs):.0f} s' if secs else ''} | "
                      f"{', '.join(f'{k} {v}' for k, v in others.most_common()) or 'none'} |")
     for note in notes or []:
         lines.append(f"| {note['model']} | {note['engine']} {note.get('version', '')} | {note.get('pack', '')} | | "
-                     f"{note.get('bits_per_weight', '')} | | not run: {note['result']} | | | | | {note['why']} |")
+                     f"{note.get('bits_per_weight', '')} | | | not run: {note['result']} | | | | | {note['why']} |")
     return "\n".join(lines) + "\n"
 
 

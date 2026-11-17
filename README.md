@@ -37,6 +37,8 @@ What we learned:
   one overnight run of a dense 27B pushed memory pressure to critical. Close other large apps before you
   measure.
 
+The story behind it, in one page: [On a 24 GB Mac, ~2-bit Qwen3.6-35B drops its tool-call tag](https://audenvenn.github.io/2026/11/17/qwen36-35b-2bit-drops-tool-call-tag.html).
+
 Every table, the exact builds and their hashes, the excluded runs and why, and the raw trajectories are in
 [published/2026-11-qwen3.6-35b-a3b-m6-24gb](published/2026-11-qwen3.6-35b-a3b-m6-24gb/README.md).
 Not run there: MTPLX (its own catalog says none of its 35B packs fit 24 GB) and mlx-lm (its 4-bit weights

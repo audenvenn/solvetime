@@ -32,10 +32,14 @@ What we learned:
   each tool output adds a few hundred new tokens that route to most of the model's 256 experts, and the ones
   raceline keeps on the SSD (29% at its default) are read again for every such chunk: its prefill during the
   runs was 420 tok/s (306 with a smaller expert cache) against kapitsa's 925. The synthetic prompt spread
-  that cost over 4,000 tokens.
-- **24 GB is tight.** With ordinary apps open (about 5-6 GB), an engine holding 17-19 GB leaves little room:
-  one overnight run of a dense 27B pushed memory pressure to critical. Close other large apps before you
-  measure.
+  that cost over 4,000 tokens. (A solvetime defect, fixed in [#27](https://github.com/audenvenn/solvetime/pull/27),
+  held memory macOS could have used to cache the experts raceline reads from the SSD, so the gap may be
+  smaller than 1.45x; it wasn't remeasured. See the results page.)
+- **24 GB is tight.** On our Mac, macOS and the programs we had open held about 7-10 GB (cached files
+  included), and in every run before 2026-11-18 solvetime itself kept another ~3.5 GB, a defect now fixed
+  ([#27](https://github.com/audenvenn/solvetime/pull/27)). With an engine holding 17-19 GB on top, one
+  overnight run of a dense 27B pushed memory pressure to critical. Close other large apps before you
+  measure; each run now records the memory available at its start.
 
 The story behind it, in one page: [On a 24 GB Mac, ~2-bit Qwen3.6-35B drops its tool-call tag](https://audenvenn.github.io/2026/11/17/qwen36-35b-2bit-drops-tool-call-tag.html).
 

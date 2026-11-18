@@ -49,9 +49,20 @@ Runs from 2026-11-15 20:59:43 to 2026-11-16 10:28:16. Agent: mini-swe-agent 2.4.
   holds; llama.cpp's memory-mapped weights sit outside its footprint (4.5 GB footprint, 15.1 GB RSS).
   Fixed in [#27](https://github.com/audenvenn/solvetime/pull/27): the calibration now runs in a process
   that exits before the engine starts, and each run records the memory available at its start.
+- **Disk scans, found after publication.** In 3 to 11 of each build's 16 attempts per set, the agent searched
+  the whole disk (`find /` and the like) before working on the task. With the engine loaded most scans took
+  14-25 s, so on the core set they took 16-23% of every build's total time, about equally: 193 s for raceline
+  and 186 s for kapitsa main. They don't explain the time gap between those two: without them raceline's core
+  time is 1.58x kapitsa main's, not 1.45x. Each of the three times memory pressure turned critical on this
+  Mac, all with a 27B loaded, an agent was running such a scan, but a controlled test did not reproduce it.
+  The old sandbox also let a scan list the directories that runs killed mid-attempt had left behind. No
+  attempt on this page read another attempt's files, and replayed in fresh sandboxes all 128 score as
+  recorded. Since 2026-11-18 ([#29](https://github.com/audenvenn/solvetime/pull/29)) the sandbox ends such a
+  scan in a fraction of a second and hides other attempts' directories.
 - **raceline's extended run** used `--expert-cache 8`: 8 GB of experts in memory instead of the 11.5 GB it
-  picks itself. During the night, the dense 27B had pushed memory pressure to critical, and the smaller
-  cache leaves the Mac more room. The cache changes where experts are read from, not what the model
+  picks itself. During the night, memory pressure had turned critical with the dense 27B loaded (it
+  coincided with an agent's whole-disk `find /`, we later found; see "Disk scans"), and the smaller cache
+  leaves the Mac more room. The cache changes where experts are read from, not what the model
   computes. Tasks solved compare with the other runs; times do not, and the Time table says so.
 - **Left out.**
   - One kapitsa 0.2.36 extended run, interrupted at 09:59 on 2026-11-16. Memory pressure turned critical

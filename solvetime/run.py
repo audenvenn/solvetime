@@ -245,6 +245,10 @@ def attempt(engine: Engine, proxy: Proxy, task: dict, number: int, out_dir: str,
                                        "drop_params": True},
                          **{k: v for k, v in config.get("model", {}).items()
                             if k in ("observation_template", "format_error_template")})
+    # mini-swe-agent retries a failed query (tenacity catches every exception) unless it is in this list; without
+    # SystemExit there, the SIGTERM of stop_on_term() arriving during a query is retried for minutes instead of
+    # ending the run (the memory watchdog's stop of 2026-11-18 19:01 kept retrying a server that was gone)
+    model.abort_exceptions = [*model.abort_exceptions, SystemExit]
     env = SandboxedEnvironment(box, timeout=COMMAND_SECONDS, env=config.get("environment", {}).get("env", {}))
     agent_cfg = {k: v for k, v in config["agent"].items() if k in ("system_template", "instance_template")}
     traj = pathlib.Path(out_dir, "trajectories", f"{task['name']}.{number}.json")
@@ -341,6 +345,8 @@ def main(argv=None):
             "step_limit": STEP_LIMIT, "wall_seconds": WALL_SECONDS, "mac": _mac(), "started": time.strftime("%F %T"),
             "tasks": names, "attempts": args.attempts, **calibrate(), "memory_before": memory_counters()}
     meta["memory_at_start"] = memory_at_start()   # after the calibration's process has ended, before the engine starts
+    with open(os.path.join(out_dir, "run.json"), "w") as f:   # written again at the end; a run killed outright
+        json.dump(meta, f, indent=2)                           # (no "finished") still leaves what it was
     log = open(os.path.join(out_dir, "engine.log"), "w")
     t_start = time.monotonic()
     proc = subprocess.Popen(engine.command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,

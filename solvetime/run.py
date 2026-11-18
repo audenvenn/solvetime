@@ -300,7 +300,21 @@ def attempt(engine: Engine, proxy: Proxy, task: dict, number: int, out_dir: str,
             "pageouts_delta": (after["pageouts"] or 0) - (before["pageouts"] or 0)}
 
 
+STOPPED = None   # set when the run was ended from outside
+
+
+def stop_on_term():
+    """SIGTERM (the memory watchdog's, a queue's timeout) ends the run through its `finally`: the engine is
+    stopped and what was measured is written. Python's default would exit at once and leave no run.json."""
+    def raise_exit(signum, frame):
+        global STOPPED
+        STOPPED = "SIGTERM"
+        raise SystemExit(128 + signum)
+    signal.signal(signal.SIGTERM, raise_exit)
+
+
 def main(argv=None):
+    stop_on_term()
     ap = argparse.ArgumentParser(prog="solvetime run", description=__doc__.split("\n\n")[0])
     ap.add_argument("--engine", required=True, choices=sorted(ENGINES))
     ap.add_argument("--model", required=True, choices=sorted(MODELS), help="the checkpoint (models.py)")
@@ -372,6 +386,8 @@ def main(argv=None):
         meta["peak_footprint_bytes"] = footprint_peak(proc.pid) if proc.poll() is None else None
         meta["memory_after"] = memory_counters()
         meta["finished"] = time.strftime("%F %T")
+        if STOPPED:
+            meta["stopped"] = STOPPED   # e.g. by the memory watchdog: the attempts after the last one recorded did not run
         if proc.poll() is None:
             os.killpg(proc.pid, signal.SIGTERM)
             try:

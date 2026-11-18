@@ -8,7 +8,11 @@ Seatbelt profile that:
 - denies reading the home directory, except the Python that runs the tasks,
   so other projects (solvetime's own hidden checks among them), credentials,
   caches and the user's files stay out of reach;
-- denies all network access, so nothing can be looked up or sent.
+- denies all network access, so nothing can be looked up or sent;
+- lists no directory but the attempt's own, the ones on the way down to it, and the task Python's. Files
+  stay readable, but an agent's `find /` cannot walk the whole Mac: on a 24 GB Mac with an engine holding
+  most of the memory, that walk floods the page cache with file-system metadata, and twice it pushed
+  memory pressure to critical. It now ends at once, with the attempt's own files.
 
 The environment is minimal too: a PATH with that Python first, HOME, a
 locale, TMPDIR, and the agent config's own variables; nothing from the
@@ -69,8 +73,22 @@ def _q(path: str) -> str:
     return '"' + path.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
+def _ancestors(path: str) -> list[str]:
+    """Every directory from / down to `path`'s parent."""
+    out, d = [], os.path.dirname(path)
+    while True:
+        out.append(d)
+        if d == os.path.dirname(d):
+            return out
+        d = os.path.dirname(d)
+
+
 def profile(writable: list[str]) -> str:
     writes = "\n".join(f"  (subpath {_q(os.path.realpath(p))})" for p in writable)
+    real = [os.path.realpath(p) for p in writable]
+    down = sorted({a for p in real for a in _ancestors(p)})
+    listable = "\n".join([f"  (literal {_q(a)})" for a in down] + [f"  (subpath {_q(p)})" for p in real]
+                         + [f"  (subpath {_q(p)})" for p in _python_roots()])
     reads = "\n".join(f"  (subpath {_q(p)})" for p in _python_roots())
     parents = {HOME}
     for p in _python_roots():                  # every directory on the way down: its metadata only (lookups
@@ -89,6 +107,9 @@ def profile(writable: list[str]) -> str:
 {writes}
   (literal "/dev/null") (literal "/dev/zero") (literal "/dev/dtracehelper")
   (regex #"^/dev/tty") (regex #"^/dev/fd/"))
+(deny file-read-data (vnode-type DIRECTORY))
+(allow file-read-data
+{listable})
 (deny file-read* (subpath {_q(HOME)}))
 (allow file-read*
 {reads})

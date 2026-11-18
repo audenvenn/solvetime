@@ -35,7 +35,7 @@ import uuid
 
 from .engines import ENGINES, harness_version, missing
 from .models import MODELS, model as model_entry
-from .run import calibrate, first_token, memory_at_start, memory_counters, wait_up
+from .run import calibrate, first_token, memory_at_start, memory_counters, stop_on_term, wait_up
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROMPTS = {
@@ -155,6 +155,7 @@ def stream(port: int, model: str, messages: list, max_tokens: int, temperature: 
 
 
 def main(argv=None):
+    stop_on_term()
     ap = argparse.ArgumentParser(prog="solvetime speed", description=__doc__.split("\n\n")[0])
     ap.add_argument("--engine", required=True, choices=sorted(ENGINES))
     ap.add_argument("--model", required=True, choices=sorted(MODELS), help="the checkpoint (models.py)")

@@ -323,7 +323,8 @@ print("lmstudio llmster " + (releases[-1] if releases else "?") + (": " + ", ".j
 
 def lmstudio(model: str, port: int) -> Engine:
     """LM Studio's headless daemon (llmster) with the newest runtimes it offers, its staff pick for the model
-    (`lms get <key>`; on a Mac, its MLX 4-bit build from lmstudio-community), one request at a time, a 65536-token window as the other engines get
+    in its MLX 4-bit build from lmstudio-community (`lms get <key>@4bit --mlx`: with -y alone, `lms get` takes
+    the variant it preselects for the hardware, and on a 24 GB Mac it also started the MLX 5-bit), one request at a time, a 65536-token window as the other engines get
     here. launchers/lmstudio.sh starts a fresh daemon, loads the model, starts the server, and stops them all
     when the run ends."""
     lms = os.environ.get("SOLVETIME_LMS", os.path.join(HOME, ".lmstudio", "bin", "lms"))

@@ -6,12 +6,13 @@
 #
 #   lmstudio.sh <port> <model key> <identifier> <context length>
 #
-# SOLVETIME_LMSTUDIO_GUARDRAILS: its model-loading guardrail for this run. The daemon reads it from
-# settings.json (modelLoadingGuardrails.mode) when it starts, so it is written there while the daemon is down,
+# SOLVETIME_LMSTUDIO_GUARDRAILS: its model-loading guardrail for this run. The daemon reads it from its own
+# .internal/settings.json (localModels.modelLoadingGuardrails.mode; the modelLoadingGuardrails at the top of
+# ~/.lmstudio/settings.json changes nothing) when it starts, so it is written there while the daemon is down,
 # and the previous mode is written back once the daemon is down again.
 set -u
 LMS="${SOLVETIME_LMS:-$HOME/.lmstudio/bin/lms}"
-SETTINGS="${SOLVETIME_LMSTUDIO_SETTINGS:-$HOME/.lmstudio/settings.json}"
+SETTINGS="${SOLVETIME_LMSTUDIO_SETTINGS:-$HOME/.lmstudio/.internal/settings.json}"
 port="$1"; key="$2"; ident="$3"; ctx="$4"
 guard="${SOLVETIME_LMSTUDIO_GUARDRAILS:-}"; previous=""; applied=""
 set_guard() {   # mode ("" removes it) -> settings.json; prints the mode it replaces
@@ -20,7 +21,7 @@ import json, os, sys
 path, mode = sys.argv[1], sys.argv[2]
 with open(path) as f:
     settings = json.load(f)
-guard = settings.setdefault("modelLoadingGuardrails", {})
+guard = settings.setdefault("localModels", {}).setdefault("modelLoadingGuardrails", {})
 print(guard.get("mode", ""))
 if mode:
     guard["mode"] = mode

@@ -17,7 +17,7 @@ LAUNCHER = os.path.join(HERE, "solvetime", "launchers", "lmstudio.sh")
 
 FAKE_LMS = """#!/bin/bash
 case "$1" in
-  load) python3 -c "import json, sys; print('mode during load:', json.load(open(sys.argv[1]))['modelLoadingGuardrails']['mode'])" "$SOLVETIME_LMSTUDIO_SETTINGS"
+  load) python3 -c "import json, sys; print('mode during load:', json.load(open(sys.argv[1]))['localModels']['modelLoadingGuardrails']['mode'])" "$SOLVETIME_LMSTUDIO_SETTINGS"
         echo "Error: Model loading was stopped due to insufficient system resources."; exit 1;;
   log) sleep 30;;
   *) exit 0;;
@@ -41,6 +41,14 @@ class OMLXGuard(unittest.TestCase):
         e = self.engine(SOLVETIME_OMLX_MEMORY_GUARD="aggressive")
         self.assertEqual(e.command[-2:], ["--memory-guard", "aggressive"])
         self.assertEqual(e.settings, "memory guard aggressive")
+
+    def test_its_own_settings_folder(self):
+        e = self.engine()
+        base = e.command[e.command.index("--base-path") + 1]
+        self.assertEqual(os.listdir(base), [])          # fresh: nothing an earlier run saved
+        open(os.path.join(base, "settings.json"), "w").close()
+        e = self.engine()
+        self.assertEqual(os.listdir(base), [])
 
     def test_not_a_tier(self):
         with self.assertRaises(ValueError):
@@ -68,19 +76,19 @@ class LMStudioGuardrails(unittest.TestCase):
                 f.write(FAKE_LMS)
             os.chmod(lms, os.stat(lms).st_mode | stat.S_IEXEC)
             settings = os.path.join(d, "settings.json")
-            before = {"downloadsFolder": "/x", "modelLoadingGuardrails": {"mode": "high", "customThresholdBytes": 4294967296,
-                                                                          "alwaysAllowLoadAnyway": False}}
+            before = {"appLanguage": "en", "localModels": {"autoFitMinContextLength": 16384, "modelLoadingGuardrails": {
+                "mode": "relaxed", "customThresholdBytes": 4294967296, "alwaysAllowLoadAnyway": False}}}
             with open(settings, "w") as f:
                 json.dump(before, f)
             env = dict(os.environ, SOLVETIME_LMS=lms, SOLVETIME_LMSTUDIO_SETTINGS=settings,
-                       SOLVETIME_LMSTUDIO_GUARDRAILS="low")
+                       SOLVETIME_LMSTUDIO_GUARDRAILS="off")
             p = subprocess.run(["/bin/bash", LAUNCHER, "8899", "qwen/qwen3.8-27b", "solvetime", "16384"], env=env,
                                capture_output=True, text=True, timeout=60, start_new_session=True)
             with open(settings) as f:
                 after = json.load(f)
-        self.assertIn("### guardrails low for this run (was high)", p.stdout)
-        self.assertIn("mode during load: low", p.stdout)
-        self.assertIn("### guardrails back to high", p.stdout)
+        self.assertIn("### guardrails off for this run (was relaxed)", p.stdout)
+        self.assertIn("mode during load: off", p.stdout)
+        self.assertIn("### guardrails back to relaxed", p.stdout)
         self.assertEqual(after, before)
 
 

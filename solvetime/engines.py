@@ -210,10 +210,16 @@ def mlx_lm(model: str, port: int) -> Engine:
     # One cached prompt: a single user's agent only ever extends its one conversation. The server's default keeps
     # the KV caches of several earlier prompts, and with the 27B's 15 GB of weights those outgrow the GPU memory
     # of a 24 GB Mac: the next 4K-token prompt fails with "Insufficient Memory" and the server stops generating.
+    # SOLVETIME_MLX_MAX_TOKENS: the longest reply the server writes when a request names no max_tokens (the
+    # agent's requests don't). Its default, 512, cuts a thinking model off mid-thought: in the 27B's run of
+    # 2026-11-19, 43 of 128 replies, and each failed attempt ended on three in a row. Shown in the tables when set.
+    limit = os.environ.get("SOLVETIME_MLX_MAX_TOKENS", "")
+    limit = str(int(limit)) if limit else ""
     return Engine("mlx-lm", model, path, [py, "-m", "mlx_lm.server", "--model", path, "--port", str(port),
-                                          "--prompt-cache-size", "1"],
+                                          "--prompt-cache-size", "1", *(["--max-tokens", limit] if limit else [])],
                   port, path, version_command=[py, "-c", "import mlx_lm; print(mlx_lm.__version__)"],
-                  pack_dir=path if os.path.isdir(path) else None, info=_files_info)
+                  pack_dir=path if os.path.isdir(path) else None, info=_files_info,
+                  settings=f"max tokens {limit}" if limit else "")
 
 
 def _gguf_info(engine: Engine) -> dict:

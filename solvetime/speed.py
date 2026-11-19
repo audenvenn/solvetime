@@ -217,9 +217,10 @@ def main(argv=None):
             test = "prefill"
             for _ in range(args.runs):
                 content = f"Request {uuid.uuid4().hex}.\n\n{body}\n\nIn one sentence: what does the code above do?"
-                # 2 tokens, timed to the first: LM Studio's MLX runtime returns max_tokens - 1 tokens
-                # (lmstudio-ai/lmstudio-bug-tracker#2602), so 1 would bring none back
-                ttft, _, _, usage = stream(engine.port, engine.api_model, [{"role": "user", "content": content}], 2, 0.0,
+                # 8 tokens, timed to the first: a 1-token request brought none back from LM Studio, whose MLX
+                # runtime returns max_tokens - 1 (lmstudio-ai/lmstudio-bug-tracker#2602), nor from MTPLX 2.12.3
+                # (27B, 2026-11-19); the first token's time is the measure, whatever follows it
+                ttft, _, _, usage = stream(engine.port, engine.api_model, [{"role": "user", "content": content}], 8, 0.0,
                                            no_thinking=engine.no_thinking)
                 n = usage.get("prompt_tokens") or len(tok.encode(content).ids) + 10
                 record(test="prefill", prompt_tokens=n, ttft_s=ttft, prefill_tok_s=n / ttft)

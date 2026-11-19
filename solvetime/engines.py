@@ -336,11 +336,17 @@ def lmstudio(model: str, port: int) -> Engine:
     lms = os.environ.get("SOLVETIME_LMS", os.path.join(HOME, ".lmstudio", "bin", "lms"))
     key = build(model, "lmstudio")
     ctx = os.environ.get("SOLVETIME_LMSTUDIO_CTX", "65536")
+    # SOLVETIME_LMSTUDIO_GUARDRAILS: its model-loading guardrail for this run (settings.json's
+    # modelLoadingGuardrails.mode; the launcher sets it and puts the previous one back). Here llmster wrote "high"
+    # on its first start, and "high" refuses the 27B on a 24 GB Mac: it estimates 20.97 GiB for 14.97 GiB of weights
+    # at a 16K window (2026-11-19).
+    guard = os.environ.get("SOLVETIME_LMSTUDIO_GUARDRAILS", "")
     launcher = os.path.join(os.path.dirname(os.path.abspath(__file__)), "launchers", "lmstudio.sh")
     return Engine("lmstudio", model, key, ["/bin/bash", launcher, str(port), key, "solvetime", ctx], port, "solvetime",
-                  env={"SOLVETIME_LMS": lms}, start_timeout=900,
+                  env={"SOLVETIME_LMS": lms, **({"SOLVETIME_LMSTUDIO_GUARDRAILS": guard} if guard else {})},
+                  start_timeout=900,
                   version_command=[sys.executable, "-c", LMSTUDIO_VERSION],
-                  info=_lmstudio_info, settings=f"context {ctx}",
+                  info=_lmstudio_info, settings=f"context {ctx}" + (f", guardrails {guard}" if guard else ""),
                   # chat_template_kwargs is ignored; reasoning_effort "none" turns thinking off (probed on qwen3.5-4b)
                   no_thinking={"reasoning_effort": "none"})
 
@@ -357,7 +363,9 @@ def _hf_snapshot(repo: str) -> str | None:
 def omlx(model: str, port: int) -> Engine:
     """oMLX (`omlx serve`, headless) on the same MLX 4-bit weights as mlx-lm (SOLVETIME_OMLX_MODEL: a model folder),
     with its own defaults otherwise: memory guard "balanced", no SSD cache, its default speculation. It loads
-    models from a directory of model folders, so the folder is linked into a directory of its own."""
+    models from a directory of model folders, so the folder is linked into a directory of its own.
+    SOLVETIME_OMLX_MEMORY_GUARD: another tier (`--memory-guard`: safe, aggressive, off), shown in the tables.
+    "balanced" refuses the 27B (15.70 GiB) on a 24 GB Mac: its ceiling was 13.18-15.50 GiB (2026-11-19)."""
     exe = os.environ.get("SOLVETIME_OMLX", shutil.which("omlx") or "omlx")
     src = build(model, "omlx")
     folder = os.path.realpath(src) if os.path.isdir(src) else (_hf_snapshot(src) or src)
@@ -370,9 +378,14 @@ def omlx(model: str, port: int) -> Engine:
             os.remove(link)
         if not os.path.exists(link):
             os.symlink(folder, link)
+    guard = os.environ.get("SOLVETIME_OMLX_MEMORY_GUARD", "")
+    if guard and guard not in ("safe", "balanced", "aggressive", "off"):
+        raise ValueError(f"SOLVETIME_OMLX_MEMORY_GUARD={guard}: one of safe, balanced, aggressive, off")
     return Engine("omlx", model, src,
-                  [exe, "serve", "--model-dir", models, "--headless", "--host", "127.0.0.1", "--port", str(port)],
+                  [exe, "serve", "--model-dir", models, "--headless", "--host", "127.0.0.1", "--port", str(port),
+                   *(["--memory-guard", guard] if guard else [])],
                   port, name, env={"OMLX_PORT": str(port)}, clear_env="OMLX_",
+                  settings=f"memory guard {guard}" if guard else "",
                   version_command=[exe, "--version"], pack_dir=folder if os.path.isdir(folder) else None,
                   info=_files_info, start_timeout=900)
 

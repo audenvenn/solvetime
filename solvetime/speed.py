@@ -217,7 +217,8 @@ def main(argv=None):
             test = "prefill"
             for _ in range(args.runs):
                 content = f"Request {uuid.uuid4().hex}.\n\n{body}\n\nIn one sentence: what does the code above do?"
-                # 2 tokens, timed to the first: LM Studio returns max_tokens - 1 tokens, so 1 would bring none back
+                # 2 tokens, timed to the first: LM Studio's MLX runtime returns max_tokens - 1 tokens
+                # (lmstudio-ai/lmstudio-bug-tracker#2602), so 1 would bring none back
                 ttft, _, _, usage = stream(engine.port, engine.api_model, [{"role": "user", "content": content}], 2, 0.0,
                                            no_thinking=engine.no_thinking)
                 n = usage.get("prompt_tokens") or len(tok.encode(content).ids) + 10

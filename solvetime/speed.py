@@ -185,11 +185,15 @@ def main(argv=None):
                             env=engine.server_env())
     try:
         problem = wait_up(f"http://127.0.0.1:{engine.port}{engine.health_path}", proc, engine.start_timeout)
+        if not problem:
+            try:   # as in `solvetime run`: an engine that cannot answer "Say hello." does not start
+                first_token(engine.port, engine.api_model, [{"role": "user", "content": "Say hello."}])
+            except (OSError, http.client.HTTPException, RuntimeError) as e:
+                problem = f"its first request failed: {e}"[:600]   # e.g. oMLX's 507 from its memory guard
         if problem:
             out.write(json.dumps({"test": "load", "load_failure": problem, **meta}) + "\n")
             print(f"does not start: {problem}")
             return
-        first_token(engine.port, engine.api_model, [{"role": "user", "content": "Say hello."}])
         meta["cold_start_seconds"] = round(time.monotonic() - t_start, 2)
         meta.update(engine.pack_info())
         out.write(json.dumps({"test": "meta", **meta}) + "\n")
@@ -239,6 +243,7 @@ def main(argv=None):
             except subprocess.TimeoutExpired:
                 os.killpg(proc.pid, signal.SIGKILL)
         out.close()
+        log.close()
         print(f"results: {path}")
 
 

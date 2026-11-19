@@ -323,7 +323,8 @@ print("lmstudio llmster " + (releases[-1] if releases else "?") + (": " + ", ".j
 
 def lmstudio(model: str, port: int) -> Engine:
     """LM Studio's headless daemon (llmster) with the newest runtimes it offers, its staff pick for the model
-    (`lms get <key>`; on a Mac, its MLX 4-bit build from lmstudio-community), one request at a time, a 65536-token window as the other engines get
+    in its MLX 4-bit build from lmstudio-community (`lms get <key>@4bit --mlx`: with -y alone, `lms get` takes
+    the variant it preselects for the hardware, and on a 24 GB Mac it also started the MLX 5-bit), one request at a time, a 65536-token window as the other engines get
     here. launchers/lmstudio.sh starts a fresh daemon, loads the model, starts the server, and stops them all
     when the run ends."""
     lms = os.environ.get("SOLVETIME_LMS", os.path.join(HOME, ".lmstudio", "bin", "lms"))
@@ -396,6 +397,20 @@ def harness_version() -> str:
     return __version__ + (f" ({r.stdout.strip()})" if r.returncode == 0 and r.stdout.strip() else "")
 
 
+def downloaded(folder: str) -> bool:
+    """A model folder whose download has finished: no partial file left (LM Studio writes
+    `downloading_<name>.part` until a file is complete) and every shard its safetensors index lists."""
+    files = os.listdir(folder)
+    if any(f.startswith("downloading_") or f.endswith(".part") for f in files):
+        return False
+    index = os.path.join(folder, "model.safetensors.index.json")
+    if os.path.isfile(index):
+        with open(index) as f:
+            shards = set(json.load(f).get("weight_map", {}).values())
+        return bool(shards) and all(os.path.isfile(os.path.join(folder, s)) for s in shards)
+    return any(f.endswith((".safetensors", ".gguf")) for f in files)
+
+
 def missing(engine: Engine) -> str | None:
     """Why this engine cannot start here (not installed, no model file), with how to fix it; None if it can."""
     exe = engine.env.get("SOLVETIME_LMS", engine.command[0]) if engine.name == "lmstudio" else engine.command[0]
@@ -410,9 +425,11 @@ def missing(engine: Engine) -> str | None:
         return f"ollama: {engine.api_model} is not pulled. `ollama pull {engine.api_model}` (with `ollama serve` running)"
     if engine.name == "lmstudio":   # from its files: any lms command starts the daemon
         name = engine.pack.split("/")[-1].lower()
-        folders = glob.glob(os.path.join(HOME, ".lmstudio", "models", "*", "*"))
-        if not any(name in os.path.basename(d).lower() for d in folders if os.path.isdir(d)):
-            return f"lmstudio: {engine.pack} is not downloaded. `lms get {engine.pack}`"
+        folders = [d for d in glob.glob(os.path.join(HOME, ".lmstudio", "models", "*", "*"))
+                   if os.path.isdir(d) and name in os.path.basename(d).lower()]
+        if not any(downloaded(d) for d in folders):
+            return (f"lmstudio: {engine.pack} is not downloaded{' completely' if folders else ''}. "
+                    f"`lms get {engine.pack}`")
     if engine.name == "omlx" and not engine.pack_dir:
         return (f"omlx: {engine.pack} is not on this Mac. Download it (`hf download {engine.pack}`), or set "
                 "SOLVETIME_OMLX_MODEL to an MLX model folder")

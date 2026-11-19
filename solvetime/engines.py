@@ -396,6 +396,20 @@ def harness_version() -> str:
     return __version__ + (f" ({r.stdout.strip()})" if r.returncode == 0 and r.stdout.strip() else "")
 
 
+def downloaded(folder: str) -> bool:
+    """A model folder whose download has finished: no partial file left (LM Studio writes
+    `downloading_<name>.part` until a file is complete) and every shard its safetensors index lists."""
+    files = os.listdir(folder)
+    if any(f.startswith("downloading_") or f.endswith(".part") for f in files):
+        return False
+    index = os.path.join(folder, "model.safetensors.index.json")
+    if os.path.isfile(index):
+        with open(index) as f:
+            shards = set(json.load(f).get("weight_map", {}).values())
+        return bool(shards) and all(os.path.isfile(os.path.join(folder, s)) for s in shards)
+    return any(f.endswith((".safetensors", ".gguf")) for f in files)
+
+
 def missing(engine: Engine) -> str | None:
     """Why this engine cannot start here (not installed, no model file), with how to fix it; None if it can."""
     exe = engine.env.get("SOLVETIME_LMS", engine.command[0]) if engine.name == "lmstudio" else engine.command[0]
@@ -410,9 +424,11 @@ def missing(engine: Engine) -> str | None:
         return f"ollama: {engine.api_model} is not pulled. `ollama pull {engine.api_model}` (with `ollama serve` running)"
     if engine.name == "lmstudio":   # from its files: any lms command starts the daemon
         name = engine.pack.split("/")[-1].lower()
-        folders = glob.glob(os.path.join(HOME, ".lmstudio", "models", "*", "*"))
-        if not any(name in os.path.basename(d).lower() for d in folders if os.path.isdir(d)):
-            return f"lmstudio: {engine.pack} is not downloaded. `lms get {engine.pack}`"
+        folders = [d for d in glob.glob(os.path.join(HOME, ".lmstudio", "models", "*", "*"))
+                   if os.path.isdir(d) and name in os.path.basename(d).lower()]
+        if not any(downloaded(d) for d in folders):
+            return (f"lmstudio: {engine.pack} is not downloaded{' completely' if folders else ''}. "
+                    f"`lms get {engine.pack}`")
     if engine.name == "omlx" and not engine.pack_dir:
         return (f"omlx: {engine.pack} is not on this Mac. Download it (`hf download {engine.pack}`), or set "
                 "SOLVETIME_OMLX_MODEL to an MLX model folder")

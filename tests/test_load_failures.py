@@ -112,5 +112,29 @@ class LMStudioDownload(unittest.TestCase):
         self.assertRegex(engines.missing(self.engine), r"is not downloaded completely\. ")
 
 
+class MTPLXDownload(unittest.TestCase):
+    def setUp(self):
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        self.home = d.name
+        for p in (mock.patch.object(engines, "HOME", self.home), mock.patch.dict(os.environ, {"SOLVETIME_MTPLX": sys.executable})):
+            p.start()
+            self.addCleanup(p.stop)
+        self.engine = engines.mtplx("qwen3.8-27b", 8896)
+
+    def test_not_pulled(self):
+        self.assertRegex(engines.missing(self.engine), r"is not downloaded\. `mtplx pull ")
+
+    def test_half_pulled_then_complete(self):
+        folder = os.path.join(self.home, ".mtplx", "models", "Youssofal--Qwen3.8-27B-MTPLX-Bare-Speed")
+        os.makedirs(folder)
+        with open(os.path.join(folder, "model.safetensors.index.json"), "w") as f:
+            json.dump({"weight_map": {"a": "model-00001-of-00002.safetensors", "b": "model-00002-of-00002.safetensors"}}, f)
+        open(os.path.join(folder, "model-00001-of-00002.safetensors"), "w").close()
+        self.assertRegex(engines.missing(self.engine), r"is not downloaded completely\. ")
+        open(os.path.join(folder, "model-00002-of-00002.safetensors"), "w").close()
+        self.assertIsNone(engines.missing(self.engine))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -454,6 +454,11 @@ def missing(engine: Engine) -> str | None:
         if not any(downloaded(d) for d in folders):
             return (f"lmstudio: {engine.pack} is not downloaded{' completely' if folders else ''}. "
                     f"`lms get {engine.pack}`")
+    if engine.name == "mtplx":   # `mtplx pull` can stop half-way: the pack then lacks shards
+        folder = engine.pack_dir
+        if not (folder and os.path.isdir(folder) and downloaded(folder)):
+            done = " completely" if folder and os.path.isdir(folder) else ""
+            return f"mtplx: {engine.pack} is not downloaded{done}. `mtplx pull {engine.pack}`"
     if engine.name == "omlx" and not engine.pack_dir:
         return (f"omlx: {engine.pack} is not on this Mac. Download it (`hf download {engine.pack}`), or set "
                 "SOLVETIME_OMLX_MODEL to an MLX model folder")

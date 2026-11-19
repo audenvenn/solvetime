@@ -51,12 +51,30 @@ WALL_SECONDS = 900
 COMMAND_SECONDS = 120
 
 
-def wait_up(url: str, proc: subprocess.Popen, timeout: int) -> str | None:
-    """None when the server answers; else why not."""
+ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+
+def last_error(path: str | None) -> str:
+    """The last line of an engine's log that reports an error, without terminal escapes; '' if none."""
+    if not path:
+        return ""
+    try:
+        with open(path, errors="replace") as f:
+            lines = [ANSI.sub("", line).strip() for line in f.read().replace("\r", "\n").splitlines()]
+    except OSError:
+        return ""
+    errors = [line for line in lines if re.search(r"\b(error|fatal)\b", line, re.I)]
+    return errors[-1][:400] if errors else ""
+
+
+def wait_up(url: str, proc: subprocess.Popen, timeout: int, log_path: str | None = None) -> str | None:
+    """None when the server answers; else why not, with the last error its log reports (a launcher's exit code
+    alone, e.g. LM Studio's -15 when `lms load` refuses, does not say why)."""
     t0 = time.monotonic()
     while time.monotonic() - t0 < timeout:
         if proc.poll() is not None:
-            return f"exited with code {proc.returncode}"
+            why = last_error(log_path)
+            return f"exited with code {proc.returncode}" + (f": {why}" if why else "")
         try:
             with urllib.request.urlopen(url, timeout=3) as r:
                 if r.status < 500:
@@ -352,7 +370,8 @@ def main(argv=None):
     proc = subprocess.Popen(engine.command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
                             env=engine.server_env())
     print(f"{engine.name} {meta['version']}: {engine.pack} | starting", flush=True)
-    problem = wait_up(f"http://127.0.0.1:{engine.port}{engine.health_path}", proc, engine.start_timeout)
+    problem = wait_up(f"http://127.0.0.1:{engine.port}{engine.health_path}", proc, engine.start_timeout,
+                      log.name)
     try:
         if problem:
             meta["load_failure"] = problem

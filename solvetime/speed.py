@@ -184,7 +184,8 @@ def main(argv=None):
     proc = subprocess.Popen(engine.command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
                             env=engine.server_env())
     try:
-        problem = wait_up(f"http://127.0.0.1:{engine.port}{engine.health_path}", proc, engine.start_timeout)
+        problem = wait_up(f"http://127.0.0.1:{engine.port}{engine.health_path}", proc, engine.start_timeout,
+                          log.name)
         if not problem:
             try:   # as in `solvetime run`: an engine that cannot answer "Say hello." does not start
                 first_token(engine.port, engine.api_model, [{"role": "user", "content": "Say hello."}])

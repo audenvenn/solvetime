@@ -38,6 +38,15 @@ def _out(*cmd: str) -> str:
         return ""
 
 
+def temp_dir_parts() -> tuple[str, str] | None:
+    """The two parts of this account's temporary directory, /var/folders/<2>/<id>/T."""
+    m = re.search(r"/var/folders/([^/]+)/([^/]+)/T(?:/|$)", os.path.realpath(tempfile.gettempdir()))
+    return (m.group(1), m.group(2)) if m else None
+
+
+TEMP = temp_dir_parts()
+
+
 def local_names() -> list[tuple[str, str]]:
     """What identifies this Mac and its user in the records, each with its replacement:
     - the per-user temporary directory /var/folders/<2>/<id>/T, which every attempt's workspace sits in;
@@ -46,9 +55,8 @@ def local_names() -> list[tuple[str, str]]:
     - the Mac's own network addresses (127.0.0.1 stays).
     Longest first, so that a name inside another is not replaced first."""
     pairs = []
-    m = re.search(r"/var/folders/([^/]+)/([^/]+)/T(?:/|$)", os.path.realpath(tempfile.gettempdir()))
-    if m:
-        pairs += [(f"{m.group(1)}/{m.group(2)}", "xx/user"), (m.group(2), "user")]
+    if TEMP:
+        pairs += [(f"{TEMP[0]}/{TEMP[1]}", "xx/user"), (TEMP[1], "user")]
     hosts = {_out("scutil", "--get", k).strip() for k in ("LocalHostName", "ComputerName", "HostName")}
     hosts |= {socket.gethostname(), socket.gethostname().split(".")[0]}
     pairs += [(h, "mac") for h in hosts if len(h) > 2 and re.sub(r"[^a-z]", "", h.lower()) not in GENERIC]
@@ -64,12 +72,16 @@ def local_names() -> list[tuple[str, str]]:
 NAMES = local_names()
 
 
-def scrub(text: str, names: list[tuple[str, str]] | None = None, home: str = HOME, account: str = ACCOUNT) -> str:
+def scrub(text: str, names: list[tuple[str, str]] | None = None, home: str = HOME, account: str = ACCOUNT,
+          temp: tuple[str, str] | None = TEMP) -> str:
     """The records without what identifies this Mac and its user: the home directory becomes ~, the
     temporary-directory id, host names, full name and network addresses are replaced, and so is the account name,
     for instance as the owner in `ls -l`. A name after a slash, as in a github.com or huggingface.co link, is
     left: it is the public handle. Workspace paths keep their shape (/var/folders/xx/user/T/solvetime-<id>/work),
-    which a replay needs."""
+    which a replay needs. An agent sometimes types the temporary directory from memory, cut short or
+    misspelled, so anything under this account's own /var/folders/<2>/ goes too, and so does anything that starts
+    with the id's first 8 characters. The system accounts' folders (/var/folders/zz/...) are the same on every Mac
+    and stay."""
     text = OMLX_ALIASES.sub(r"\1[localhost, 127.0.0.1 and this Mac's own names: not published]", text.replace(home, "~"))
     for old, new in NAMES if names is None else names:
         if re.fullmatch(r"[0-9.]+", old) and old.count(".") == 3:   # IPv4, not part of a longer number
@@ -78,6 +90,9 @@ def scrub(text: str, names: list[tuple[str, str]] | None = None, home: str = HOM
             text = re.sub(rf"(?<![0-9a-f:]){re.escape(old)}(?![0-9a-f:])", new, text)
         else:
             text = text.replace(old, new)
+    if temp:
+        text = re.sub(rf"(/var/folders/){re.escape(temp[0])}/", r"\1xx/", text)
+        text = re.sub(rf"{re.escape(temp[1][:8])}[A-Za-z0-9_+-]*", "user", text)
     return re.sub(rf"(?<![/\w.@-]){re.escape(account)}(?![\w-])", "user", text) if account else text
 
 

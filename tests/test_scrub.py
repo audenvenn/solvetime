@@ -12,8 +12,11 @@ NAMES = sorted([("ab/k3j9x2_q8w7e6r5t4y3u2i1o0p9a0000gn", "xx/user"), ("k3j9x2_q
                 ("192.168.1.2", "192.0.2.1"), ("2408:8207:abcd::1", "2001:db8::1")], key=lambda p: -len(p[0]))
 
 
+TEMP = ("ab", "k3j9x2_q8w7e6r5t4y3u2i1o0p9a0000gn")
+
+
 def scrub(text):
-    return publish.scrub(text, names=NAMES, home=HOME, account="alice")
+    return publish.scrub(text, names=NAMES, home=HOME, account="alice", temp=TEMP)
 
 
 class Scrub(unittest.TestCase):
@@ -39,6 +42,16 @@ class Scrub(unittest.TestCase):
         self.assertEqual(scrub("http://192.168.1.2:8080/ and 192.168.1.25 and 10.192.168.1.2"),
                          "http://192.0.2.1:8080/ and 192.168.1.25 and 10.192.168.1.2")
         self.assertEqual(scrub("[2408:8207:abcd::1]:443 and 2408:8207:abcd::12"), "[2001:db8::1]:443 and 2408:8207:abcd::12")
+
+    def test_the_id_typed_from_memory(self):
+        # cut short, or misspelled after its first characters, as agents typed it (2026-11-20)
+        self.assertEqual(scrub("cat /private/var/folders/ab/k3j9x2_q8w7e6r5/T/solvetime-xyz/work/a.py"),
+                         "cat /private/var/folders/xx/user/T/solvetime-xyz/work/a.py")
+        self.assertEqual(scrub("ls /var/folders/ab/k3j9x2_q8wzzzz/T"), "ls /var/folders/xx/user/T")
+        self.assertEqual(scrub("ls /var/folders/ab/"), "ls /var/folders/xx/")
+        system = "/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T"
+        self.assertEqual(scrub(system), system)
+        self.assertRegex(scrub("/var/folders/ab/k3j9x2_q8w7e6/T/solvetime-xyz/work"), validate.WORK)
 
     def test_scrubbing_twice_changes_nothing_more(self):
         text = f"{HOME}/x alice  staff Alices-Mac-Mini 192.168.1.2 /var/folders/ab/k3j9x2_q8w7e6r5t4y3u2i1o0p9a0000gn/T"

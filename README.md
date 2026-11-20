@@ -51,41 +51,50 @@ exceed the memory Metal lets the GPU use).
 
 ## Second result: Qwen3.8-27B on a 24 GB Mac
 
-A dense 27B at about 4 bits nearly fills a 24 GB Mac. Which engine runs it, and that engine's defaults, decided
-whether a coding agent worked at all. Core set, 16 attempts per row, Mac mini M6:
+A dense 27B at about 4 bits nearly fills a 24 GB Mac. We ran the 8 core tasks twice in each configuration below,
+on a Mac mini M6. The rows differ in engine, model build, settings and the memory free at the start, so the table
+compares these setups as they ran; it doesn't say how much any one factor contributed.
 
-| Engine and build | Settings | Solved | Total time | Per solved task |
+| Engine and build | Settings | Solved | Total time | Time per solved task |
 |---|---|---|---|---|
-| raceline 0.8.1 (ours) | defaults | 16/16 | 45.8 min | 172 s |
-| kapitsa main c1c42e6 (PRs #1279, #1302; in 0.2.37) | defaults | 16/16 | 66.4 min | 249 s |
-| kapitsa 0.2.36 | defaults | 14/16 | 65.8 min | 282 s |
-| oMLX 0.8.0 | memory guard "aggressive" (the default refuses to load) | 12/16 | 276.1 min | 1,380 s |
+| raceline 0.8.1 (ours) | defaults (32K window) | 16/16 | 45.8 min | 172 s |
+| kapitsa main c1c42e6 (PRs #1279, #1302; in 0.2.37) | defaults (16K window) | 16/16 | 66.4 min | 249 s |
+| kapitsa 0.2.36 | defaults (16K window) | 14/16 | 65.8 min | 282 s |
+| oMLX 0.8.0 | memory guard "aggressive" (the default guard declined to load the model) | 12/16 | 276.1 min | 1,380 s |
 | mlx-lm 0.32.2 | defaults (replies capped at 512 tokens) | 9/16 | 98.0 min | 653 s |
 | mlx-lm 0.32.2 | replies up to 16,384 tokens | 9/16 | 162.7 min | 1,085 s |
-| LM Studio (llmster 0.0.27-1) | guardrails off (the default refuses to load) | 2/16 | 85.0 min | 2,549 s |
-| MTPLX 2.12.3 | defaults; other apps held 5.4 GB at its start, and Chrome, Xcode and Pages were opened mid-run | 0/16 | 71.4 min | none solved |
+| LM Studio (llmster 0.0.27-1) | 4-bit build pinned, 16K window, guardrails off (the default guardrail declined to load the model) | 2/16 | 85.0 min | 2,549 s |
+| MTPLX 2.12.3 | defaults, which set a 4K window here; other apps held 5.4 GB at its start, and Chrome, Xcode and Pages were opened mid-run, after its refusals began | 0/16 | 71.4 min | none solved |
 
-Ollama 0.40.16 does not fit at its defaults.
+Total time covers all 16 attempts, failed ones included, and the last column divides it by the tasks solved. A
+task counts as solved when its hidden check passes on the final workspace, even if the agent then ended on an
+error.
+
+Ollama 0.40.16 has no scored result: memory pressure stopped its 64K run during loading and its 16K run during
+the first attempt. Its native 4K window was not tried.
 
 What we learned:
 
-- **Defaults decided more than speed did.** mlx_lm.server caps a reply at 512 tokens unless the request says
-  otherwise, and every failure in its default row came from that cap. LM Studio's guardrail and oMLX's memory
-  guard refuse the model at their defaults. MTPLX's per-request guard refused every prompt while other apps held
-  5.4 GB.
-- **Going past a default has a cost.** With LM Studio's guardrail off, its MLX engine ran out of GPU memory in
-  attempt 3, then kept its 19 GB while the server answered every request with "No models loaded". mlx-lm's
-  server, with its 512-token cap lifted, ran out of GPU memory the same way in its 13th attempt and answered 404
-  from then on. oMLX's aggressive guard kept it running by aborting 70 requests and rejecting 8 prompts; decoding
-  at 9.9 tok/s, it took about four times kapitsa's total time.
+- **Defaults shaped several rows.** mlx_lm.server caps a reply at 512 tokens unless the request asks for more.
+  In its default row, 43 of 128 replies reached the cap, 41 of them without a tool call, and all seven failed
+  attempts ended after three cut-off replies in a row. Allowing 16,384 tokens also gave 9/16: two failures became
+  passes, and two passes became failures, one by running out of time and one after a crash. Under the recorded
+  conditions, LM Studio's guardrail and oMLX's memory guard declined to load the model at their defaults. MTPLX's
+  own memory plan set a 4,096-token window, and its memory guard refused 483 of its 484 requests.
+- **Going past a default has a cost.** With LM Studio's guardrail off, its MLX engine ran out of GPU memory during
+  attempt 3, then kept its 19 GB while attempts 4–16 spent about 54 minutes on requests answered with "No models
+  loaded". mlx-lm's server, allowed longer replies, ran out of GPU memory during attempt 12, which still passed,
+  and answered 404 to the last four. oMLX with its aggressive guard stayed up through 64 aborted requests, 8
+  rejected prompts and 4 model evictions followed by reloads, and solved 12/16 in 276.1 minutes.
 - **Two bugs we reported in kapitsa were fixed within a day** (#1279, the parser; #1302, the memory fit). On the
-  same pack, 0.2.36 solved 14/16 and main 16/16. One of 0.2.36's misses ended on tool calls written as text,
-  which is the parser bug's pattern; the other was a wrong answer. The counts can't be told apart (p = 0.48).
-- **raceline (ours) was fastest per solved task here.** But the top three rows' solved counts can't be told apart
-  (p ≥ 0.48), and raceline started with less memory free (11.9 GB against 15.6–16.4).
+  same pack, 0.2.36 solved 14/16 and main at c1c42e6 16/16. One 0.2.36 attempt ended after three tool calls cut
+  off at the length limit, and the other failed its check. This comparison doesn't show which of main's changes,
+  if any, made the difference.
+- **raceline (ours) and kapitsa main both solved 16/16.** Their 16 attempts took 45.8 and 66.4 minutes, in one run
+  each, on different builds and windows.
 
-Every row's conditions, including the memory available at its start and the user's decisions on non-default
-settings, are on the [results page](published/2026-11-qwen3.8-27b-m6-24gb/README.md).
+Every row's conditions, including the memory available at each start, the speed tests, the statistical tests and
+the user's decisions on non-default settings, are on the [results page](published/2026-11-qwen3.8-27b-m6-24gb/README.md).
 
 ## What it measures
 

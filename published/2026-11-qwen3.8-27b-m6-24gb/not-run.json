@@ -1,0 +1,26 @@
+[
+  {
+    "model": "qwen3.8-27b",
+    "engine": "Ollama",
+    "version": "0.40.16",
+    "pack": "qwen3.8:27b (q4_K_M, 17.74 GB)",
+    "result": "does not fit",
+    "why": "Memory pressure turned critical twice on this 24 GB Mac: while loading at a 64K window (Ollama's own estimate: 20.6 GB of GPU memory, 18.2 GB free) and in the first attempt at a 16K window (llama-server reached 21 GB against its 17.3 GB estimate; Ollama disables mmap here). Its own default window here is 4K, which would cut an agent's conversation."
+  },
+  {
+    "model": "qwen3.8-27b",
+    "engine": "LM Studio",
+    "version": "llmster 0.0.27-1, mlx-llm 1.14.0",
+    "pack": "qwen/qwen3.8-27b@4bit (lmstudio-community MLX 4-bit, 4.43 bits per weight), 16K window, guardrails off (non-default)",
+    "result": "speed not measured",
+    "why": "First try (2026-11-19 15:48): memory pressure turned critical while the model loaded, because the engine of the agent run before it had crashed (Metal out of memory) but kept its 19 GB until stopped, and the reload overlapped its teardown. Retry from a settled state (20:44): the model loaded, but the prefill test got no token back: LM Studio's MLX runtime returns max_tokens - 1 tokens (asked for 1, it returns none; lmstudio-ai/lmstudio-bug-tracker#2602), and it ignores chat_template_kwargs.enable_thinking (only reasoning_effort \"none\" turns its thinking off), so the speed test's requests did not fit it. Found with qwen3.5-4b at 21:0x; the speed test is fixed after the round. The 27B was removed after the retry, so it was not measured again. The user's choice for a second failure (#44): record it as not measured."
+  },
+  {
+    "model": "qwen3.8-27b",
+    "engine": "MTPLX",
+    "version": "2.12.3",
+    "pack": "Youssofal/Qwen3.8-27B-MTPLX-Bare-Speed (4.5 bpw, its tight fit for 24 GB)",
+    "result": "speed not measured",
+    "why": "The speed test (speed-20261119-222857, 22:28) loaded it (cold start 9.5 s), and its warm-up requests decoded at 19.5-23.8 tok/s by its own log. The prefill request asked for 1 token and got none back; MTPLX's log warns \"max_tokens leaves no room to answer\". The speed test asks for 8 since solvetime #37, but the pack had been removed by then, and the user's #47 kept the MTPLX row as measured."
+  }
+]

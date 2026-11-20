@@ -49,6 +49,41 @@ Every table, the exact builds and their hashes, the excluded runs and why, and t
 Not run there: MTPLX (its own catalog says none of its 35B packs fit 24 GB) and mlx-lm (its 4-bit weights
 exceed the memory Metal lets the GPU use).
 
+## Second result: Qwen3.8-27B on a 24 GB Mac
+
+A dense 27B at about 4 bits nearly fills a 24 GB Mac. Which engine runs it, and that engine's defaults, decided
+whether a coding agent worked at all. Core set, 16 attempts per row, Mac mini M6:
+
+| Engine and build | Settings | Solved | Total time | Per solved task |
+|---|---|---|---|---|
+| raceline 0.8.1 (ours) | defaults | 16/16 | 45.8 min | 172 s |
+| kapitsa main c1c42e6 (PRs #1279, #1302; in 0.2.37) | defaults | 16/16 | 66.4 min | 249 s |
+| kapitsa 0.2.36 | defaults | 14/16 | 65.8 min | 282 s |
+| oMLX 0.8.0 | memory guard "aggressive" (the default refuses to load) | 12/16 | 276.1 min | 1,380 s |
+| mlx-lm 0.32.2 | defaults (replies capped at 512 tokens) | 9/16 | 98.0 min | 653 s |
+| mlx-lm 0.32.2 | replies up to 16,384 tokens | 9/16 | 162.7 min | 1,085 s |
+| LM Studio (llmster 0.0.27-1) | guardrails off (the default refuses to load) | 2/16 | 85.0 min | 2,549 s |
+| MTPLX 2.12.3 | defaults | 0/16 | 71.4 min | none solved |
+
+Ollama 0.40.16 does not fit at its defaults.
+
+What we learned:
+
+- **Defaults decided more than speed did.** mlx_lm.server caps a reply at 512 tokens unless the request says
+  otherwise, and every failure in its default row came from that cap. LM Studio's guardrail and oMLX's memory
+  guard refuse the model at their defaults. MTPLX's per-request guard refused every prompt while other apps held
+  5.4 GB.
+- **Forcing past a guard has a cost.** With LM Studio's guardrail off, its MLX engine ran out of GPU memory in
+  attempt 3, then stayed loaded but unusable. mlx-lm's server did the same with 16,384-token replies. oMLX's
+  aggressive guard kept running by aborting requests, at about four times kapitsa's total time.
+- **Two reported bugs, two fixes within a day.** kapitsa's parser fix (#1279) and memory-fit fix (#1302) took it
+  from 14/16 to 16/16 on the same pack.
+- **raceline (ours) was fastest per solved task here.** But the top three rows' solved counts can't be told apart
+  (p ≥ 0.48), and raceline started with less memory free (11.9 GB against 15.6–16.4).
+
+Every row's conditions, including the memory available at its start and the user's decisions on non-default
+settings, are on the [results page](published/2026-11-qwen3.8-27b-m6-24gb/README.md).
+
 ## What it measures
 
 - **Solved**: a hidden check decides; the agent never sees it, and files it must not edit (such as the tests)

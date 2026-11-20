@@ -64,7 +64,7 @@ compares these setups as they ran; it doesn't say how much any one factor contri
 | mlx-lm 0.32.2 | defaults (replies capped at 512 tokens) | 9/16 | 98.0 min | 653 s |
 | mlx-lm 0.32.2 | replies up to 16,384 tokens | 9/16 | 162.7 min | 1,085 s |
 | LM Studio (llmster 0.0.27-1) | 4-bit build pinned, 16K window, guardrails off (the default guardrail declined to load the model) | 2/16 | 85.0 min | 2,549 s |
-| MTPLX 2.12.3 | defaults, which set a 4K window here; other apps held 5.4 GB at its start, and Chrome, Xcode and Pages were opened mid-run, after its refusals began | 0/16 | 71.4 min | none solved |
+| MTPLX 2.12.3 | defaults (its memory plan chose a 4K window); other apps held 5.4 GB at its start, and Chrome, Xcode and Pages were opened mid-run, after its refusals began | 0/16 | 71.4 min | none solved |
 
 Total time covers all 16 attempts, failed ones included, and the last column divides it by the tasks solved. A
 task counts as solved when its hidden check passes on the final workspace, even if the agent then ended on an
@@ -76,7 +76,7 @@ the first attempt. Its native 4K window was not tried.
 What we learned:
 
 - **Defaults shaped several rows.** mlx_lm.server caps a reply at 512 tokens unless the request asks for more.
-  In its default row, 43 of 128 replies reached the cap, 41 of them without a tool call, and all seven failed
+  In mlx-lm's default row, 43 of 128 replies reached the cap, 41 of them without a tool call, and all seven failed
   attempts ended after three cut-off replies in a row. Allowing 16,384 tokens also gave 9/16: two failures became
   passes, and two passes became failures, one by running out of time and one after a crash. Under the recorded
   conditions, LM Studio's guardrail and oMLX's memory guard declined to load the model at their defaults. MTPLX's

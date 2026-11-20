@@ -1,7 +1,7 @@
 # Qwen3.8-27B on a 24 GB Mac mini (M6), November 2026
 
 Machine: Apple M6, 24 GB, macOS 27.2.
-Runs from 2026-11-18 15:11:17 to 2026-11-19 22:28:00. Agent: mini-swe-agent 2.4.6; limits: 50 steps and 900 s per attempt. Sampling sent with every request: temperature 0.6, top-p 0.95, top-k 20, min-p 0, presence penalty 0, thinking on. Tables made with solvetime 0.1.0.dev0 (eeabb2d).
+Runs from 2026-11-18 15:11:17 to 2026-11-19 22:28:00. Agent: mini-swe-agent 2.4.6; limits: 50 steps and 900 s per attempt. Sampling sent with every request: temperature 0.6, top-p 0.95, top-k 20, min-p 0, presence penalty 0, thinking on. Tables made with solvetime 0.1.0.dev0 (10bda79-dirty).
 
 ## About these runs
 
@@ -22,8 +22,9 @@ Runs from 2026-11-18 15:11:17 to 2026-11-19 22:28:00. Agent: mini-swe-agent 2.4.
   | MTPLX (11-19 21:16) | 13.3 GB | 5.4 GB |
 
 - **The model.** Qwen3.8-27B, a dense model (no experts) with 64 layers: 48 linear-attention (Gated DeltaNet)
-  layers and 16 full-attention layers, one in every four. Each engine runs the build
-  it picks or recommends for a 24 GB Mac, at its default settings. A row whose settings are not the engine's
+  layers and 16 full-attention layers, one in every four. raceline, kapitsa, LM Studio and MTPLX run the build
+  each picks or recommends for a 24 GB Mac. mlx-lm and oMLX recommend none, so they run the mlx-community MLX 4-bit
+  build. All of them run at their default settings. A row whose settings are not the engine's
   defaults says so in its name and its settings column; each of those was the user's decision, after the default
   failed to load or to run.
 - **Builds and windows.**
@@ -38,13 +39,15 @@ Runs from 2026-11-18 15:11:17 to 2026-11-19 22:28:00. Agent: mini-swe-agent 2.4.
       KV cache needs ([issue #1300](https://github.com/nace-ai/kapitsa/issues/1300)).
 
     kapitsa 0.2.37 contains c1c42e6. Both runs started with kapitsa's SSD prefix cache cleared.
-  - mlx-lm 0.32.2 on MLX 4-bit weights (4.43 bits per weight), plain decoding, no fixed window.
+  - mlx-lm 0.32.2 on mlx-community/Qwen3.8-27B-4bit at b935172 (4.43 bits per weight), plain decoding, no
+    fixed window. The local copy matches that revision file for file, except tokenizer.json. That file is a
+    re-serialization, and it encodes and decodes identically on 915 texts (150,291 tokens) from the round.
     mlx_lm.server's default reply limit is 512 tokens (`--max-tokens`). solvetime sends no limit, so the default
     row runs with it, and a second, non-default row allows 16,384.
   - LM Studio (llmster 0.0.27-1, MLX runtime 1.14.0): `qwen/qwen3.8-27b@4bit` (lmstudio-community MLX 4-bit,
     4.43 bits per weight), with a 16,384-token window. At its default resource guardrail ("relaxed") it refuses to
     load the model, estimating 20.97 GiB with "Confidence: LOW". The non-default row turns the guardrail off.
-  - oMLX 0.8.0 on the same MLX 4-bit weights as mlx-lm. At its default memory guard ("balanced") it refuses the
+  - oMLX 0.8.0 on the same mlx-community MLX 4-bit weights as mlx-lm. At its default memory guard ("balanced") it refuses the
     model, because its ceiling follows free memory: 13.2 GiB at 09:20, and 15.5 GiB at the best reading (11:15),
     against the model's 15.70. The non-default row uses its "aggressive" guard. oMLX's paged SSD KV cache is on
     by default and may use up to half the free disk; it wrote 16 GB during the agent run. Each oMLX run had its
@@ -96,10 +99,17 @@ Runs from 2026-11-18 15:11:17 to 2026-11-19 22:28:00. Agent: mini-swe-agent 2.4.
   - oMLX "aggressive": prefill from run 1 only (317 tok/s), by the user's decision. Runs 2 and 3 overlapped 14 s of
     unrelated unit tests on the same Mac and are excluded (`speed-exclusions.json`). Decode is from all runs.
 - **Left out** (in `results/_excluded`, with notes):
-  - all 27B runs from 2026-11-17 and the morning of 2026-11-18. They ran on an older harness that held about
-    3.5 GB of memory during every run and let agents scan the whole disk.
+  - the 27B runs from 2026-11-17: the harness held about 3.5 GB of memory during every run (the calibration's MLX
+    cache, fixed in #27) and let agents scan the whole disk;
+  - the run from the morning of 2026-11-18: still the whole-disk scan, which #29 removed;
+  - an oMLX run at 14:15 on 2026-11-19, stopped after 2 minutes, because it started with the "aggressive" tier
+    left behind by an earlier probe;
+  - two oMLX speed files from 09:21–09:22, where the speed test stopped on the 507 refusal instead of recording it
+    (fixed in #32);
+  - LM Studio's 11:25 default record, superseded by the 14:21 one, which names the reason;
   - two later oMLX speed reruns: one ended on critical memory pressure, and the other was refused by its guard;
-  - LM Studio's first speed try, made while the crashed engine still held 19 GB;
+  - LM Studio's two speed tries with the guardrail off: one while the crashed engine still held 19 GB, and one at
+    20:44 whose 1-token prefill request got nothing back;
   - a run recorded while LM Studio's download had been aborted.
 - **Not run:** Ollama 0.40.16. Memory pressure turned critical while it loaded at a 64K window, and again in the
   first attempt at a 16K window, where its process grew past its own memory estimate (see `not-run.json` and
@@ -114,10 +124,10 @@ Solved with a 95% Wilson interval. "Ended by malformed output": the attempt stop
 | qwen3.8-27b | raceline 0.8.1 (ours) | qwen3.8-27b (FP4, 4.0 bits, with its MTP head) | defaults | 4.04 | 11.9 GB | 8 (core) | 16/16 (100%, 95% CI 81-100%) | 0/16 | 0 of 171 | 3 | 119 s | none |
 | qwen3.8-27b | kapitsa 0.2.36 (release, fe6a17a) | kapitsa qwen3.8-27b: qwen3.8-27b-q4 | defaults | 4.43 | 15.6 GB | 8 (core) | 14/16 (88%, 95% CI 64-97%) | 1/16 | 0 of 147 | 7 | 162 s | wrong 1 |
 | qwen3.8-27b | kapitsa main c1c42e6 (fixes #1279, #1302) | kapitsa qwen3.8-27b: qwen3.8-27b-q4 | defaults | 4.43 | 16.4 GB | 8 (core) | 16/16 (100%, 95% CI 81-100%) | 0/16 | 0 of 159 | 7 | 154 s | none |
-| qwen3.8-27b | mlx-lm 0.32.2 | ~/project/model/models/Qwen3.8-27B-4bit | defaults | 4.43 | 10.4 GB | 8 (core) | 9/16 (56%, 95% CI 33-77%) | 7/16 | 0 of 128 | 41 | 422 s | none |
-| qwen3.8-27b | mlx-lm 0.32.2 | ~/project/model/models/Qwen3.8-27B-4bit | max tokens 16384 | 4.43 | 14.1 GB | 8 (core) | 9/16 (56%, 95% CI 33-77%) | 0/16 | 0 of 109 | 0 | 552 s | error 4, timeout 3 |
+| qwen3.8-27b | mlx-lm 0.32.2 | mlx-community/Qwen3.8-27B-4bit (b935172) | defaults | 4.43 | 10.4 GB | 8 (core) | 9/16 (56%, 95% CI 33-77%) | 7/16 | 0 of 128 | 41 | 422 s | none |
+| qwen3.8-27b | mlx-lm 0.32.2 | mlx-community/Qwen3.8-27B-4bit (b935172) | max tokens 16384 | 4.43 | 14.1 GB | 8 (core) | 9/16 (56%, 95% CI 33-77%) | 0/16 | 0 of 109 | 0 | 552 s | error 4, timeout 3 |
 | qwen3.8-27b | LM Studio llmster 0.0.27-1 (MLX runtime 1.14.0) | qwen/qwen3.8-27b (lmstudio-community/Qwen3.8-27B-MLX-4bit) | context 16384, guardrails off | 4.43 | 15.2 GB | 8 (core) | 2/16 (12%, 95% CI 3-36%) | 0/16 | 0 of 171 | 0 | 451 s | error 14 |
-| qwen3.8-27b | oMLX 0.8.0 | ~/project/model/models/Qwen3.8-27B-4bit | memory guard aggressive | 4.43 | 15.6 GB | 8 (core) | 12/16 (75%, 95% CI 51-90%) | 0/16 | 0 of 208 | 0 | 601 s | error 3, loop 1 |
+| qwen3.8-27b | oMLX 0.8.0 | mlx-community/Qwen3.8-27B-4bit (b935172) | memory guard aggressive | 4.43 | 15.6 GB | 8 (core) | 12/16 (75%, 95% CI 51-90%) | 0/16 | 0 of 208 | 0 | 601 s | error 3, loop 1 |
 | qwen3.8-27b | MTPLX 2.12.3 | Youssofal/Qwen3.8-27B-MTPLX-Bare-Speed | defaults | 4.5 | 13.3 GB | 8 (core) | 0/16 (0%, 95% CI 0-19%) | 0/16 | 0 of 484 | 0 |  | error 16 |
 | qwen3.8-27b | Ollama 0.40.16 | qwen3.8:27b (q4_K_M, 17.74 GB) | |  | | | not run: does not fit | | | | | Memory pressure turned critical twice on this 24 GB Mac: while loading at a 64K window (Ollama's own estimate: 20.6 GB of GPU memory, 18.2 GB free) and in the first attempt at a 16K window (llama-server reached 21 GB against its 17.3 GB estimate; Ollama disables mmap here). Its own default window here is 4K, which would cut an agent's conversation. |
 | qwen3.8-27b | LM Studio llmster 0.0.27-1, mlx-llm 1.14.0 | qwen/qwen3.8-27b@4bit (lmstudio-community MLX 4-bit, 4.43 bits per weight), 16K window, guardrails off (non-default) | |  | | | not run: speed not measured | | | | | First try (2026-11-19 15:48): memory pressure turned critical while the model loaded, because the engine of the agent run before it had crashed (Metal out of memory) but kept its 19 GB until stopped, and the reload overlapped its teardown. Retry from a settled state (20:44): the model loaded, but the prefill test got no token back: LM Studio's MLX runtime returns max_tokens - 1 tokens (asked for 1, it returns none; lmstudio-ai/lmstudio-bug-tracker#2602), and it ignores chat_template_kwargs.enable_thinking (only reasoning_effort "none" turns its thinking off), so the speed test's requests did not fit it. Found with qwen3.5-4b at 21:0x; the speed test is fixed after the round. The 27B was removed after the retry, so it was not measured again. The user's choice for a second failure (#44): record it as not measured. |
@@ -185,12 +195,12 @@ Peak footprint is the engine's phys_footprint, which leaves out clean memory-map
 | qwen3.8-27b | raceline 0.8.1 (ours) | qwen3.8-27b (FP4, 4.0 bits, with its MTP head) | defaults | 4.04 | 13.8 GB | 7.2 GB | 4 s | 16/16 | 119 s | 172 s | 45.8 min | 4330 | 10 | none | 0.0 GB |
 | qwen3.8-27b | kapitsa 0.2.36 (release, fe6a17a) | kapitsa qwen3.8-27b: qwen3.8-27b-q4 | defaults | 4.43 | 20.2 GB | 18.5 GB | 5 s | 14/16 | 162 s | 282 s | 65.8 min | 3752 | 10 | malformed output 1, wrong 1 | 0.0 GB |
 | qwen3.8-27b | kapitsa main c1c42e6 (fixes #1279, #1302) | kapitsa qwen3.8-27b: qwen3.8-27b-q4 | defaults | 4.43 | 20.2 GB | 18.5 GB | 7 s | 16/16 | 154 s | 249 s | 66.4 min | 3891 | 9 | none | 0.0 GB |
-| qwen3.8-27b | oMLX 0.8.0 | ~/project/model/models/Qwen3.8-27B-4bit | defaults | | | | | does not start: its first request failed: HTTP 507: {"error":{"message":"Model 'Qwen3.8-27B-4bit' (15.70GB) does not fit under the dynamic memory ceiling (13.18GB). Close other apps to free RAM (macOS and other apps leave oMLX 13.18GB of the 21.00GB static cap, and oMLX itself uses 208.84MB of that), raise memory_guard_tier (safe → balanced → aggressive), or use a smaller model.","type":"server_error","param":null,"code":null}} | | | | | | | |
-| qwen3.8-27b | mlx-lm 0.32.2 | ~/project/model/models/Qwen3.8-27B-4bit | defaults | 4.43 | 16.1 GB | 19.4 GB | 6 s | 9/16 | 422 s | 653 s | 98.0 min | 2569 | 8 | malformed output 4, loop 3 | 0.0 GB |
-| qwen3.8-27b | mlx-lm 0.32.2 | ~/project/model/models/Qwen3.8-27B-4bit | max tokens 16384 | 4.43 | 16.1 GB | 19.5 GB | 5 s | 9/16 | 552 s | 1085 s | 162.7 min | 6034 | 8 | error 4, timeout 3 | 0.0 GB |
+| qwen3.8-27b | oMLX 0.8.0 | mlx-community/Qwen3.8-27B-4bit (b935172) | defaults | | | | | does not start: its first request failed: HTTP 507: {"error":{"message":"Model 'Qwen3.8-27B-4bit' (15.70GB) does not fit under the dynamic memory ceiling (13.18GB). Close other apps to free RAM (macOS and other apps leave oMLX 13.18GB of the 21.00GB static cap, and oMLX itself uses 208.84MB of that), raise memory_guard_tier (safe → balanced → aggressive), or use a smaller model.","type":"server_error","param":null,"code":null}} | | | | | | | |
+| qwen3.8-27b | mlx-lm 0.32.2 | mlx-community/Qwen3.8-27B-4bit (b935172) | defaults | 4.43 | 16.1 GB | 19.4 GB | 6 s | 9/16 | 422 s | 653 s | 98.0 min | 2569 | 8 | malformed output 4, loop 3 | 0.0 GB |
+| qwen3.8-27b | mlx-lm 0.32.2 | mlx-community/Qwen3.8-27B-4bit (b935172) | max tokens 16384 | 4.43 | 16.1 GB | 19.5 GB | 5 s | 9/16 | 552 s | 1085 s | 162.7 min | 6034 | 8 | error 4, timeout 3 | 0.0 GB |
 | qwen3.8-27b | LM Studio llmster 0.0.27-1 (MLX runtime 1.14.0) | qwen/qwen3.8-27b | context 16384 | | | | | does not start: exited with code -15: Error: Model loading was stopped due to insufficient system resources. Continuing to load the model would likely overload your system and cause it to freeze. If you think this is incorrect, you can adjust the model loading guardrails in settings. | | | | | | | |
 | qwen3.8-27b | LM Studio llmster 0.0.27-1 (MLX runtime 1.14.0) | qwen/qwen3.8-27b (lmstudio-community/Qwen3.8-27B-MLX-4bit) | context 16384, guardrails off | 4.43 | 16.1 GB | not measured | 17 s | 2/16 | 451 s | 2549 s | 85.0 min | 3940 | 10 | error 14 | 0.1 GB |
-| qwen3.8-27b | oMLX 0.8.0 | ~/project/model/models/Qwen3.8-27B-4bit | memory guard aggressive | 4.43 | 16.1 GB | 19.6 GB | 20 s | 12/16 | 601 s | 1380 s | 276.1 min | not reported | 11 | error 3, loop 1 | 0.0 GB |
+| qwen3.8-27b | oMLX 0.8.0 | mlx-community/Qwen3.8-27B-4bit (b935172) | memory guard aggressive | 4.43 | 16.1 GB | 19.6 GB | 20 s | 12/16 | 601 s | 1380 s | 276.1 min | not reported | 11 | error 3, loop 1 | 0.0 GB |
 | qwen3.8-27b | MTPLX 2.12.3 | Youssofal/Qwen3.8-27B-MTPLX-Bare-Speed | defaults | 4.5 | 16.3 GB | 19.1 GB | 10 s | 0/16 |  | nothing solved | 71.4 min | 138 | 30 | error 16 | 0.0 GB |
 
 

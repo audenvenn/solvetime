@@ -63,7 +63,7 @@ whether a coding agent worked at all. Core set, 16 attempts per row, Mac mini M6
 | mlx-lm 0.32.2 | defaults (replies capped at 512 tokens) | 9/16 | 98.0 min | 653 s |
 | mlx-lm 0.32.2 | replies up to 16,384 tokens | 9/16 | 162.7 min | 1,085 s |
 | LM Studio (llmster 0.0.27-1) | guardrails off (the default refuses to load) | 2/16 | 85.0 min | 2,549 s |
-| MTPLX 2.12.3 | defaults | 0/16 | 71.4 min | none solved |
+| MTPLX 2.12.3 | defaults; other apps held 5.4 GB at its start, and Chrome, Xcode and Pages were opened mid-run | 0/16 | 71.4 min | none solved |
 
 Ollama 0.40.16 does not fit at its defaults.
 
@@ -73,11 +73,14 @@ What we learned:
   otherwise, and every failure in its default row came from that cap. LM Studio's guardrail and oMLX's memory
   guard refuse the model at their defaults. MTPLX's per-request guard refused every prompt while other apps held
   5.4 GB.
-- **Forcing past a guard has a cost.** With LM Studio's guardrail off, its MLX engine ran out of GPU memory in
-  attempt 3, then stayed loaded but unusable. mlx-lm's server did the same with 16,384-token replies. oMLX's
-  aggressive guard kept running by aborting requests, at about four times kapitsa's total time.
-- **Two reported bugs, two fixes within a day.** kapitsa's parser fix (#1279) and memory-fit fix (#1302) took it
-  from 14/16 to 16/16 on the same pack.
+- **Going past a default has a cost.** With LM Studio's guardrail off, its MLX engine ran out of GPU memory in
+  attempt 3, then kept its 19 GB while the server answered every request with "No models loaded". mlx-lm's
+  server, with its 512-token cap lifted, ran out of GPU memory the same way in its 13th attempt and answered 404
+  from then on. oMLX's aggressive guard kept it running by aborting 70 requests and rejecting 8 prompts; decoding
+  at 9.9 tok/s, it took about four times kapitsa's total time.
+- **Two bugs we reported in kapitsa were fixed within a day** (#1279, the parser; #1302, the memory fit). On the
+  same pack, 0.2.36 solved 14/16 and main 16/16. One of 0.2.36's misses ended on tool calls written as text,
+  which is the parser bug's pattern; the other was a wrong answer. The counts can't be told apart (p = 0.48).
 - **raceline (ours) was fastest per solved task here.** But the top three rows' solved counts can't be told apart
   (p ≥ 0.48), and raceline started with less memory free (11.9 GB against 15.6–16.4).
 

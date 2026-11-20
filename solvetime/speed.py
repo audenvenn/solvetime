@@ -122,11 +122,15 @@ class MemorySampler:
         self.thread.join()
 
 
-def stream(port: int, model: str, messages: list, max_tokens: int, temperature: float, timeout: float = 900):
-    """-> (seconds to the first token, seconds from the first to the last, text, the engine's usage)."""
+def stream(port: int, model: str, messages: list, max_tokens: int, temperature: float, timeout: float = 900,
+           no_thinking: dict | None = None):
+    """-> (seconds to the first token, seconds from the first to the last, text, the engine's usage).
+
+    Thinking off: chat_template_kwargs.enable_thinking, plus the engine's own fields for it (LM Studio and Ollama
+    ignore chat_template_kwargs and need reasoning_effort "none")."""
     body = {"model": model, "messages": messages, "max_tokens": max_tokens, "stream": True, "temperature": temperature,
             "stream_options": {"include_usage": True}, "chat_template_kwargs": {"enable_thinking": False},
-            **SAMPLING.get(temperature, {})}
+            **SAMPLING.get(temperature, {}), **(no_thinking or {})}
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
     t0 = time.monotonic()
     conn.request("POST", "/v1/chat/completions", json.dumps(body), {"Content-Type": "application/json"})
@@ -208,11 +212,16 @@ def main(argv=None):
 
         test = "warm-up"
         try:
-            stream(engine.port, engine.api_model, [{"role": "user", "content": PROMPTS["write"]}], 64, 0.6)
+            stream(engine.port, engine.api_model, [{"role": "user", "content": PROMPTS["write"]}], 64, 0.6,
+                   no_thinking=engine.no_thinking)
             test = "prefill"
             for _ in range(args.runs):
                 content = f"Request {uuid.uuid4().hex}.\n\n{body}\n\nIn one sentence: what does the code above do?"
-                ttft, _, _, usage = stream(engine.port, engine.api_model, [{"role": "user", "content": content}], 1, 0.0)
+                # 8 tokens, timed to the first: a 1-token request brought none back from LM Studio, whose MLX
+                # runtime returns max_tokens - 1 (lmstudio-ai/lmstudio-bug-tracker#2602), nor from MTPLX 2.12.3
+                # (27B, 2026-11-19); the first token's time is the measure, whatever follows it
+                ttft, _, _, usage = stream(engine.port, engine.api_model, [{"role": "user", "content": content}], 8, 0.0,
+                                           no_thinking=engine.no_thinking)
                 n = usage.get("prompt_tokens") or len(tok.encode(content).ids) + 10
                 record(test="prefill", prompt_tokens=n, ttft_s=ttft, prefill_tok_s=n / ttft)
             for name, prompt in PROMPTS.items():
@@ -222,7 +231,8 @@ def main(argv=None):
                         content = prompt if name == "continue" else f"Request {uuid.uuid4().hex}. {prompt}"
                         with MemorySampler(proc.pid) as mem:
                             ttft, span, text, usage = stream(engine.port, engine.api_model,
-                                                             [{"role": "user", "content": content}], 512, temperature)
+                                                             [{"role": "user", "content": content}], 512, temperature,
+                                                             no_thinking=engine.no_thinking)
                         n = len(tok.encode(text).ids)
                         record(test=test, completion_tokens=n,
                                engine_completion_tokens=usage.get("completion_tokens"), ttft_s=ttft,

@@ -240,7 +240,10 @@ def llama_cpp(model: str, port: int) -> Engine:
     own chat template, plain decoding. SOLVETIME_LLAMA_SPEC=draft-mtp drafts with the model's MTP head, for a GGUF
     that carries one (the Qwen3.6-35B-A3B UD-IQ2_XXS GGUF of the first results does not). SOLVETIME_LLAMA_LORA: a
     LoRA adapter GGUF applied on top (`--lora`), e.g. harness-hub's pi adapter for Qwen3.8-27B; shown in the tables.
-    The window (SOLVETIME_LLAMA_CTX) is shown when it is not the default."""
+    The window (SOLVETIME_LLAMA_CTX) is shown when it is not the default. SOLVETIME_LLAMA_CACHE_RAM: the RAM prompt
+    cache in MiB (`--cache-ram`; 0 turns it off). Its default, 8192, keeps whole earlier conversation states (2.0-2.6
+    GB each for Qwen3.8-27B at 16K) beside the model, which an agent's one conversation does not use: on a 24 GB
+    Mac it pushed a 14.35 GB model into 9.5 GB of swap and critical pressure (2026-11-20)."""
     gguf = build(model, "llama.cpp")
     ctx = os.environ.get("SOLVETIME_LLAMA_CTX", "65536")
     command = ["llama-server", "-m", gguf, "--port", str(port), "--host", "127.0.0.1", "-ngl", "999", "-fa", "on",
@@ -253,7 +256,11 @@ def llama_cpp(model: str, port: int) -> Engine:
         if not os.path.isfile(lora):
             raise ValueError(f"SOLVETIME_LLAMA_LORA={lora}: no such file")
         command += ["--lora", lora]
+    cache_ram = os.environ.get("SOLVETIME_LLAMA_CACHE_RAM", "")
+    if cache_ram:
+        command += ["--cache-ram", str(int(cache_ram))]
     settings = [f"context {ctx}"] if ctx != "65536" else []
+    settings += [("prompt cache off" if int(cache_ram) == 0 else f"prompt cache {int(cache_ram)} MiB")] if cache_ram else []
     settings += [f"speculation {spec}"] if spec != "none" else []
     settings += [f"lora {os.path.basename(lora)}"] if lora else []
     return Engine("llama.cpp", model, os.path.basename(gguf) or "(set SOLVETIME_GGUF)", command, port,

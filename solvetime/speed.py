@@ -265,13 +265,17 @@ def table(paths: list[str], exclude: dict | None = None) -> str:
     exclude: {speed file name: {test: [run numbers, from 1], "why": text}}, runs that are left out of the cells,
     each said in the row's notes (2026-11-19: two prefill runs that overlapped other work on the Mac)."""
     from .report import DETACHED, engine_name
-    lines = ["| Model | Engine | Bits per weight | Prefill 4K | Write T 0.6 | Write T 0 | Continue T 0.6 | Continue T 0 "
-             "| Memory taken (system) | RSS | Footprint | Notes |", "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    lines = ["| Model | Engine | Settings | Bits per weight | Prefill 4K | Write T 0.6 | Write T 0 | Continue T 0.6 "
+             "| Continue T 0 | Memory taken (system) | RSS | Footprint | Notes |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for p in paths:
         rows = [json.loads(line) for line in open(p)]
         meta = next((r for r in rows if r["test"] in ("meta", "load")), {})
         if meta.get("load_failure"):
-            lines.append(f"| {meta['model']} | {engine_name(meta)} | | | | | | | | | | does not start: {meta['load_failure']} |")
+            kind = ("server started, warm-up refused" if meta["load_failure"].startswith("its first request failed")
+                    else "engine did not start")
+            lines.append(f"| {meta['model']} | {engine_name(meta)} | {meta.get('settings') or 'defaults'} | | | | | | | | | | "
+                         f"no speed result — {kind}: {meta['load_failure']} |")
             continue
         left_out = (exclude or {}).get(os.path.basename(p), {})
 
@@ -282,7 +286,12 @@ def table(paths: list[str], exclude: dict | None = None) -> str:
                     and (key != "decode_tok_s" or (r.get("completion_tokens") or 0) >= 256)]
             if not vals and any(r["test"] == test for r in rows):
                 return "too short to time"
-            return f"{fmt.format(statistics.median(vals))} ({fmt.format(min(vals))}-{fmt.format(max(vals))})" if vals else ""
+            if not vals:
+                return ""
+            if skip:   # some runs left out: say how many count, not a range that looks like repeated measurements
+                spread = f"{fmt.format(min(vals))}-{fmt.format(max(vals))}; " if len(vals) > 1 else ""
+                return f"{fmt.format(statistics.median(vals))} ({spread}{len(vals)} retained of {len(runs)})"
+            return f"{fmt.format(statistics.median(vals))} ({fmt.format(min(vals))}-{fmt.format(max(vals))})"
 
         failed = next((r for r in rows if r["test"] == "failure"), None)
         rss = max((r.get("rss_peak_bytes") or 0 for r in rows), default=0)
@@ -294,7 +303,8 @@ def table(paths: list[str], exclude: dict | None = None) -> str:
                             for test, nums in left_out.items() if test != "why")
         notes = "; ".join(x for x in (meta.get("note"), skipped,
                                      f"stopped during {failed['during']}: {failed['error']}" if failed else "") if x)
-        lines.append(f"| {meta.get('model')} | {engine_name(meta)} | {meta.get('bits_per_weight') or ''} "
+        lines.append(f"| {meta.get('model')} | {engine_name(meta)} | {meta.get('settings') or 'defaults'} "
+                     f"| {meta.get('bits_per_weight') or ''} "
                      f"| {cell('prefill', 'prefill_tok_s', '{:.0f}')} | "
                      + " | ".join(cell(f"decode {n} T={t}", "decode_tok_s", "{:.1f}") for n in PROMPTS for t in (0.6, 0.0))
                      + " | " + " | ".join(memory) + f" | {notes} |")

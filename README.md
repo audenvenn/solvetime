@@ -141,6 +141,8 @@ conditions, the first try we discarded, and the limits.
 - Every attempt's trajectory and the raw numbers are published next to the tables.
 - Disclosure: the author also maintains [raceline](https://github.com/audenvenn/raceline), one of the
   engines measured. It is labelled in every table and reported like any other.
+- The code and the results pages are written with Claude's assistance, and Codex reviews them independently
+  before they are published.
 
 ## How it is measured
 

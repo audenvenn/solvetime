@@ -1,8 +1,8 @@
 """solvetime publish RESULTS_DIR OUT_DIR: runs and speed tests, ready to commit, with their tables.
 
 Copies every agent run (run.json, attempts.jsonl, engine.log, trajectories/) and every speed test
-(speed-*.jsonl and its engine log) from RESULTS_DIR into OUT_DIR, with the home directory replaced by ~ in
-every file, then writes OUT_DIR/README.md: the runs pooled per engine build (solved, with 95% intervals),
+(speed-*.jsonl and its engine log) from RESULTS_DIR into OUT_DIR, scrubbed of what identifies this Mac and its
+user (scrub()), then writes OUT_DIR/README.md: the runs pooled per engine build (solved, with 95% intervals),
 pairwise Fisher exact tests, one row per run, the speed table, and the engines that were not run.
 
 --runs and --speed take shell patterns of names in RESULTS_DIR (default: all). --notes FILE adds the engines
@@ -13,18 +13,72 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import getpass
 import json
 import os
+import re
+import socket
 import subprocess
+import tempfile
 
 from . import report, speed
 from .engines import harness_version
 
 HOME = os.path.expanduser("~")
+ACCOUNT = getpass.getuser()
+GENERIC = {"mac", "macmini", "macbook", "macbookair", "macbookpro", "imac", "macstudio", "macpro", "localhost"}
+# oMLX logs the names and addresses it answers to.
+OMLX_ALIASES = re.compile(r"(server aliases: )\[[^\]]*\]")
 
 
-def scrub(text: str) -> str:
-    return text.replace(HOME, "~")
+def _out(*cmd: str) -> str:
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
+def local_names() -> list[tuple[str, str]]:
+    """What identifies this Mac and its user in the records, each with its replacement:
+    - the per-user temporary directory /var/folders/<2>/<id>/T, which every attempt's workspace sits in;
+    - the host names;
+    - the account's full name;
+    - the Mac's own network addresses (127.0.0.1 stays).
+    Longest first, so that a name inside another is not replaced first."""
+    pairs = []
+    m = re.search(r"/var/folders/([^/]+)/([^/]+)/T(?:/|$)", os.path.realpath(tempfile.gettempdir()))
+    if m:
+        pairs += [(f"{m.group(1)}/{m.group(2)}", "xx/user"), (m.group(2), "user")]
+    hosts = {_out("scutil", "--get", k).strip() for k in ("LocalHostName", "ComputerName", "HostName")}
+    hosts |= {socket.gethostname(), socket.gethostname().split(".")[0]}
+    pairs += [(h, "mac") for h in hosts if len(h) > 2 and re.sub(r"[^a-z]", "", h.lower()) not in GENERIC]
+    full = _out("id", "-F").strip()
+    if len(full) > 3:
+        pairs.append((full, "user"))
+    for addr in re.findall(r"\binet6? ([0-9a-f.:]+)", _out("ifconfig")):
+        if addr not in ("127.0.0.1", "::1") and not addr.startswith("fe80"):
+            pairs.append((addr, "192.0.2.1" if "." in addr else "2001:db8::1"))
+    return sorted(set(pairs), key=lambda p: -len(p[0]))
+
+
+NAMES = local_names()
+
+
+def scrub(text: str, names: list[tuple[str, str]] | None = None, home: str = HOME, account: str = ACCOUNT) -> str:
+    """The records without what identifies this Mac and its user: the home directory becomes ~, the
+    temporary-directory id, host names, full name and network addresses are replaced, and so is the account name,
+    for instance as the owner in `ls -l`. A name after a slash, as in a github.com or huggingface.co link, is
+    left: it is the public handle. Workspace paths keep their shape (/var/folders/xx/user/T/solvetime-<id>/work),
+    which a replay needs."""
+    text = OMLX_ALIASES.sub(r"\1[localhost, 127.0.0.1 and this Mac's own names: not published]", text.replace(home, "~"))
+    for old, new in NAMES if names is None else names:
+        if re.fullmatch(r"[0-9.]+", old) and old.count(".") == 3:   # IPv4, not part of a longer number
+            text = re.sub(rf"(?<![0-9.]){re.escape(old)}(?![0-9]|\.[0-9])", new, text)
+        elif re.fullmatch(r"[0-9a-f:]+", old) and ":" in old:   # IPv6, not part of a longer address
+            text = re.sub(rf"(?<![0-9a-f:]){re.escape(old)}(?![0-9a-f:])", new, text)
+        else:
+            text = text.replace(old, new)
+    return re.sub(rf"(?<![/\w.@-]){re.escape(account)}(?![\w-])", "user", text) if account else text
 
 
 def copy_tree(src: str, dst: str) -> int:

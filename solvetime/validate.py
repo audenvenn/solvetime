@@ -128,7 +128,7 @@ def settings_problems(meta: dict) -> list[str]:
     want = sampling(name, thinking) if name in MODELS and thinking in THINKING else None
     if want is None:
         problems.append(f"unknown model or thinking setting: {name!r}, {thinking!r}")
-    else:
+    elif not meta.get("load_failure"):   # an engine that did not start was sent no request, so no sampling
         expected = {k: v for k, v in want.__dict__.items() if v is not None and k != "extra"}
         sent = {k: v for k, v in (meta.get("overrides_sent") or {}).items() if k in want.__dict__ and k != "extra"}
         if sent != expected:          # an engine's own fields for the same setting (reasoning_effort) may come on top

@@ -62,6 +62,8 @@ def main(argv=None):
     ap.add_argument("--title", default="Results")
     ap.add_argument("--about", help="a Markdown file about these runs, placed after the summary line")
     ap.add_argument("--names", help="a JSON object: the names the tables show for recorded build names")
+    ap.add_argument("--exclude", help="a JSON object: speed runs left out of the speed table, each with why: "
+                    '{"speed-….jsonl": {"prefill": [2, 3], "why": "…"}} (run numbers from 1; the file is published)')
     args = ap.parse_args(argv)
 
     os.makedirs(args.out, exist_ok=True)
@@ -85,6 +87,10 @@ def main(argv=None):
                 with open(os.path.join(args.out, "speed", f), "w", encoding="utf-8") as fh:
                     fh.write(text)
                 size += len(text.encode())
+    exclude = json.load(open(args.exclude)) if args.exclude else {}
+    if exclude:   # published beside the data, so a reader sees what was left out and why
+        with open(os.path.join(args.out, "speed-exclusions.json"), "w") as f:
+            json.dump(exclude, f, indent=2)
     notes = json.load(open(args.notes)) if args.notes else []
     if notes:
         with open(os.path.join(args.out, "not-run.json"), "w") as f:
@@ -137,7 +143,10 @@ def main(argv=None):
                   "of up to 512 tokens on two prompts, three runs each (median, range). Memory taken (system): what "
                   "the system had available before the engine started, minus the least it had while the engine ran "
                   "(free, inactive, speculative and purgeable pages), on an otherwise quiet machine.", "",
-                  speed.table(speed_paths), ""]
+                  speed.table(speed_paths, exclude), ""]
+        if exclude:
+            lines[-2:-1] = ["Runs left out of a cell are named in its row's notes, and listed with the reason in "
+                            "speed-exclusions.json.", "", lines[-2]]
     if notes:
         lines += ["## Not run", ""]
         for n in notes:

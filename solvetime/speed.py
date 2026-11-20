@@ -259,19 +259,26 @@ def main(argv=None):
         print(f"results: {path}")
 
 
-def table(paths: list[str]) -> str:
-    """Markdown: one row per engine and model, medians with ranges."""
+def table(paths: list[str], exclude: dict | None = None) -> str:
+    """Markdown: one row per engine and model, medians with ranges.
+
+    exclude: {speed file name: {test: [run numbers, from 1], "why": text}}, runs that are left out of the cells,
+    each said in the row's notes (2026-11-19: two prefill runs that overlapped other work on the Mac)."""
+    from .report import DETACHED, engine_name
     lines = ["| Model | Engine | Bits per weight | Prefill 4K | Write T 0.6 | Write T 0 | Continue T 0.6 | Continue T 0 "
              "| Memory taken (system) | RSS | Footprint | Notes |", "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for p in paths:
         rows = [json.loads(line) for line in open(p)]
         meta = next((r for r in rows if r["test"] in ("meta", "load")), {})
         if meta.get("load_failure"):
-            lines.append(f"| {meta['model']} | {meta['engine']} | | | | | | | | | | does not start: {meta['load_failure']} |")
+            lines.append(f"| {meta['model']} | {engine_name(meta)} | | | | | | | | | | does not start: {meta['load_failure']} |")
             continue
+        left_out = (exclude or {}).get(os.path.basename(p), {})
 
         def cell(test, key, fmt):
-            vals = [r[key] for r in rows if r["test"] == test and r.get(key)
+            runs = [r for r in rows if r["test"] == test]
+            skip = {n - 1 for n in left_out.get(test, [])}   # run numbers from 1, as the notes say them
+            vals = [r[key] for i, r in enumerate(runs) if i not in skip and r.get(key)
                     and (key != "decode_tok_s" or (r.get("completion_tokens") or 0) >= 256)]
             if not vals and any(r["test"] == test for r in rows):
                 return "too short to time"
@@ -281,13 +288,16 @@ def table(paths: list[str]) -> str:
         rss = max((r.get("rss_peak_bytes") or 0 for r in rows), default=0)
         fp = max((r.get("footprint_peak_bytes") or 0 for r in rows), default=0)
         taken = max((r.get("system_taken_bytes") or 0 for r in rows), default=0)
-        from .report import engine_name
+        memory = [f"{taken / 1e9:.1f} GB" if taken else ""] + [
+            "not measured" if meta.get("engine") in DETACHED else (f"{n / 1e9:.1f} GB" if n else "") for n in (rss, fp)]
+        skipped = "; ".join(f"{test} runs {', '.join(map(str, nums))} left out: {left_out.get('why', '')}"
+                            for test, nums in left_out.items() if test != "why")
+        notes = "; ".join(x for x in (meta.get("note"), skipped,
+                                     f"stopped during {failed['during']}: {failed['error']}" if failed else "") if x)
         lines.append(f"| {meta.get('model')} | {engine_name(meta)} | {meta.get('bits_per_weight') or ''} "
                      f"| {cell('prefill', 'prefill_tok_s', '{:.0f}')} | "
                      + " | ".join(cell(f"decode {n} T={t}", "decode_tok_s", "{:.1f}") for n in PROMPTS for t in (0.6, 0.0))
-                     + "".join(f" | {n / 1e9:.1f} GB" if n else " | " for n in (taken, rss, fp)) + " | "
-                     + "; ".join(x for x in (meta.get("note"), f"stopped during {failed['during']}: {failed['error']}"
-                                             if failed else "") if x) + " |")
+                     + " | " + " | ".join(memory) + f" | {notes} |")
     return "\n".join(lines) + "\n"
 
 

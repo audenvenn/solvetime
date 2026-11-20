@@ -96,6 +96,24 @@ What we learned:
 Every row's conditions, including the memory available at each start, the speed tests, the statistical tests and
 the user's decisions on non-default settings, are on the [results page](published/2026-11-qwen3.8-27b-m6-24gb/README.md).
 
+## Experiment: an agent LoRA on Qwen3.8-27B
+
+harness-hub's pi adapter is a LoRA for Qwen3.8-27B, trained to work behind the pi coding agent. On the same 24 GB
+Mac mini, we ran the same 4-bit GGUF in llama.cpp without and with it, under solvetime's agent rather than pi. Each
+arm ran the 8 core and 8 extended tasks twice.
+
+| Arm | Solved | Steps per attempt (mean) | Tokens written per attempt (mean) | Total time |
+|---|---|---|---|---|
+| Without the adapter | 28/32 | 6.75 | 1,028 | 69.4 min |
+| With the adapter | 28/32 | 5.09 | 743 | 53.6 min |
+
+Both arms failed the same two tasks. With the adapter the agent took fewer steps on 13 of the 16 tasks (two-sided
+sign test, p = 0.021 unadjusted, 0.064 after adjusting for the three measures compared). In total across all
+attempts it took 23% less time, although llama.cpp, which applies the adapter at run time, processed prompts 30%
+slower with it. This is one model build and one engine, with 32 attempts per arm, so the result is exploratory. The
+[experiment page](published/2026-11-experiment-pi-lora-qwen3.8-27b-m6-24gb/README.md) has the results per task, the
+conditions, the first try we discarded, and the limits.
+
 ## What it measures
 
 - **Solved**: a hidden check decides; the agent never sees it, and files it must not edit (such as the tests)

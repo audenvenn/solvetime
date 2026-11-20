@@ -109,17 +109,21 @@ def main(argv=None):
         agents = sorted({m.get("agent", "?") for m in metas})
         sampling = sorted({describe_sampling(m.get("sampling") or {}) for m in metas})
         lines += [f"Runs from {first} to {last}. Agent: {', '.join(agents)}; limits: {metas[0].get('step_limit')} "
-                  f"steps and {metas[0].get('wall_seconds')} s per attempt. Sampling sent with every request: "
+                  f"steps, and a {metas[0].get('wall_seconds')} s budget the agent checks before each query (a query "
+                  f"in flight and its retries can run past it). Sampling sent with every request: "
                   f"{'; '.join(sampling)}. Tables made with solvetime {harness_version()}.", ""]
     if args.about:
         lines += [open(args.about).read().strip(), ""]
     lines += ["## Agent tasks, each engine build pooled over its task sets", "",
-              "Solved with a 95% Wilson interval. \"Ended by malformed output\": the attempt stopped after three "
-              "replies in a row that the agent could not use (no tool call). \"Replies without a tool call\" counts "
-              "every such reply, recovered or not, out of all replies. \"Available at start\": the memory macOS could "
-              "hand out just before the engine started (vm_stat: free, inactive, speculative and purgeable pages); the rest "
-              "was in use by macOS and the other open programs. On a 24 GB Mac it decides whether a 15-19 GB build fits. "
-              "Runs made before 2026-11-18 did not record it.", "",
+              "Solved: the attempt's final workspace passed the task's check, work done before an error included, "
+              "with a 95% Wilson interval. \"Failed checks after a repeated-format exit\": attempts the agent stopped "
+              "after three replies in a row it could not use, whose check then failed. \"Requests\": every request "
+              "the agent sent, the ones that failed included. \"Agent tool-call error notices\" and \"Agent "
+              "output-limit notices\": the agent's own feedback messages, for a reply without a usable tool call and "
+              "for a reply cut off at the output limit. \"Estimated available before launch\": the memory macOS could "
+              "hand out just before the engine started (vm_stat: free, inactive, speculative and purgeable pages), "
+              "measured after the harness's GPU calibration; runs made before 2026-11-18 did not record it. A run "
+              "whose engine never served an attempt is listed with how it stopped, and no score.", "",
               report.pooled_table(root, notes), "",
               "## Pairwise differences", "",
               "Two-sided Fisher exact tests. With a few dozen attempts per engine, only large differences reach "
@@ -127,10 +131,11 @@ def main(argv=None):
               report.pairwise_table(root), "",
               "## Time", "",
               "Total time: the attempts end to end (agent, sandbox and engine). Per solved task: total time over "
-              "tasks solved. Time in the engine: the requests themselves. Decode and prefill during the run: from "
+              "tasks solved. Summed proxy request duration: the requests' durations added up; with retries it can "
+              "exceed the elapsed time. Decode and prefill during the run: from "
               "each engine's own log, medians over the requests that wrote at least 64 tokens and that read at "
-              "least 256 new tokens. A run with settings beyond the defaults has times that compare with nothing "
-              "else.", "",
+              "least 256 new tokens. Elapsed totals describe each listed configuration, and include the time "
+              "spent on failed attempts.", "",
               report.time_table(root), "",
               "## Each run", "",
               "Peak footprint is the engine's phys_footprint, which leaves out clean memory-mapped pages: it "
@@ -148,6 +153,15 @@ def main(argv=None):
         if exclude:
             lines[-2:-1] = ["Runs left out of a cell are named in its row's notes, and listed with the reason in "
                             "speed-exclusions.json.", "", lines[-2]]
+    speed_notes = [n for n in notes if report.speed_only(n)]   # engines with an agent score but no speed result
+    if speed_notes:
+        if not speed_paths:
+            lines += ["## Speed", ""]
+        for n in speed_notes:
+            lines.append(f"- {n['model']}, {n['engine']} {n.get('version', '')} ({n.get('pack', '')}): "
+                         f"no speed result. {n['why']}")
+        lines.append("")
+    notes = [n for n in notes if not report.speed_only(n)]
     if notes:
         lines += ["## Not run", ""]
         for n in notes:

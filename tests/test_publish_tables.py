@@ -71,6 +71,31 @@ class Tables(unittest.TestCase):
         self.assertNotIn("0.2 GB", row)
 
 
+    def test_unscored_starts_and_cells_per_row(self):
+        self.run_dir("a-omlx", {"engine": "omlx", "version": "0.8.0",
+                                "load_failure": "its first request failed: HTTP 507: does not fit"}, [])
+        self.run_dir("b-lmstudio", {"engine": "lmstudio", "version": "lmstudio llmster 0.0.27-1",
+                                    "load_failure": "exited with code -15: Error: Model loading was stopped"}, [])
+        self.run_dir("c-mtplx", {"engine": "mtplx", "version": "mtplx 2.12.3"},
+                     [attempt("t", 1, False, tokens=138), attempt("t", 2, False, tokens=None)])
+        notes = [{"model": "qwen3.8-27b", "engine": "MTPLX", "result": "speed not measured", "why": "no token"},
+                 {"model": "qwen3.8-27b", "engine": "Ollama", "result": "does not fit", "why": "critical"}]
+        pooled = report.pooled_table(self.root, notes)
+        self.assertIn("0 attempts scored — server started, warm-up refused: its first request failed", pooled)
+        self.assertIn("0 attempts scored — engine exited before answering: exited with code -15", pooled)
+        self.assertNotIn("speed not measured", pooled)          # a speed-only note belongs under Speed
+        self.assertIn("not run: does not fit", pooled)
+        self.assertIn("Failed checks after a repeated-format exit", pooled)
+        self.assertIn("Failed checks after a repeated-format exit, A vs B", report.pairwise_table(self.root))
+        self.assertIn("Summed proxy request duration", report.time_table(self.root))
+        each = report.table(self.root)
+        self.assertIn("| 138 (1/2 attempts) |", each)
+        for table in (pooled, each, report.time_table(self.root)):
+            rows = [r for r in table.strip().splitlines() if r.startswith("|")]
+            cells = lambda r: len(r.strip()[1:-1].split("|"))
+            self.assertEqual({cells(r) for r in rows}, {cells(rows[0])}, table)
+
+
 class SpeedTable(unittest.TestCase):
     def write(self, d, name, rows):
         path = os.path.join(d, name)
@@ -94,11 +119,55 @@ class SpeedTable(unittest.TestCase):
             whole = speed.table([p])
             self.assertIn("| 302 (301-317) |", whole)
             kept = speed.table([p], {"speed-y-omlx.jsonl": {"prefill": [2, 3], "why": "overlapped other work"}})
-            self.assertIn("| 317 (317-317) |", kept)
+            self.assertIn("| 317 (1 retained of 3) |", kept)
             self.assertIn("prefill runs 2, 3 left out: overlapped other work", kept)
             self.assertIn("| 15.0 GB | 15.0 GB |", kept)
             q = self.write(d, "speed-z-lmstudio.jsonl", [{**meta, "engine": "lmstudio"}, *prefill, *decode])
             self.assertIn("| 16.0 GB | not measured | not measured |", speed.table([q]))
+
+
+    def test_settings_column_and_cells_per_row(self):
+        meta = {"test": "meta", "engine": "omlx", "version": "0.8.0", "model": "qwen3.8-27b", "settings": "memory guard aggressive"}
+        rows = [meta, {"test": "prefill", "prefill_tok_s": 317.0},
+                {"test": "decode write T=0.6", "decode_tok_s": 9.9, "completion_tokens": 511}]
+        with tempfile.TemporaryDirectory() as d:
+            a = self.write(d, "speed-a.jsonl", rows)
+            b = self.write(d, "speed-b.jsonl", [{"test": "load", "engine": "omlx", "version": "0.8.0", "model": "qwen3.8-27b",
+                                                 "load_failure": "its first request failed: HTTP 507"}])
+            out = speed.table([a, b])
+        self.assertIn("| memory guard aggressive |", out)
+        self.assertIn("| defaults |", out)
+        self.assertIn("no speed result — server started, warm-up refused", out)
+        lines = [r for r in out.strip().splitlines() if "---" not in r]
+        cells = lambda r: len(r.strip()[1:-1].split("|"))
+        self.assertEqual({cells(r) for r in lines}, {cells(lines[0])}, out)
+
+
+class Publish(unittest.TestCase):
+    def test_speed_only_notes_go_under_speed(self):
+        from solvetime import publish
+        with tempfile.TemporaryDirectory() as res, tempfile.TemporaryDirectory() as out:
+            run = os.path.join(res, "20261119-000000-mtplx-qwen3.8-27b")
+            os.makedirs(run)
+            meta = {"model": "qwen3.8-27b", "engine": "mtplx", "version": "mtplx 2.12.3", "pack": "p", "settings": "",
+                    "started": "2026-11-19 21:16:21", "finished": "2026-11-19 22:28:00", "agent": "mini-swe-agent 2.4.6",
+                    "step_limit": 50, "wall_seconds": 900, "sampling": {}, "mac": {"chip": "M6", "memory_gb": 24}}
+            with open(os.path.join(run, "run.json"), "w") as f:
+                json.dump(meta, f)
+            with open(os.path.join(run, "attempts.jsonl"), "w") as f:
+                f.write(json.dumps(attempt("t", 1, False)) + "\n")
+            open(os.path.join(run, "engine.log"), "w").close()
+            notes = os.path.join(res, "not-run.json")
+            with open(notes, "w") as f:
+                json.dump([{"model": "qwen3.8-27b", "engine": "MTPLX", "result": "speed not measured", "why": "no token back."},
+                           {"model": "qwen3.8-27b", "engine": "Ollama", "result": "does not fit", "why": "critical."}], f)
+            publish.main([res, out, "--speed", "none-*", "--notes", notes])
+            page = open(os.path.join(out, "README.md")).read()
+        speed_part = page[page.index("## Speed"):page.index("## Not run")]
+        self.assertIn("MTPLX", speed_part)
+        self.assertIn("no speed result. no token back.", speed_part)
+        self.assertNotIn("MTPLX", page[page.index("## Not run"):])
+        self.assertIn("a 900 s budget the agent checks before each query", page)
 
 
 class Validate(unittest.TestCase):

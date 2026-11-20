@@ -8,6 +8,7 @@ import glob
 import json
 import math
 import os
+import re
 import statistics
 
 
@@ -41,9 +42,23 @@ def pack_name(pack: str) -> str:
     return DISPLAY.get(pack, pack)
 
 
+def readable(failure: str) -> str:
+    """A recorded failure with an engine's JSON error body shown as its message. Records made before solvetime #43
+    kept the body itself, cut at 400 bytes, sometimes mid-field ('"type":"server_e'); run.json keeps them as
+    recorded."""
+    m = re.search(r'(HTTP \d+: )\{.*?"message":\s*"', failure)
+    if not m:
+        return failure
+    try:
+        message, _ = json.decoder.scanstring(failure, m.end())
+    except ValueError:
+        return failure
+    return failure[:m.start()] + m.group(1) + message
+
+
 def unscored(meta: dict) -> str:
     """The status of a run whose engine never served an attempt, by what stopped it."""
-    failure = meta.get("load_failure") or ""
+    failure = readable(meta.get("load_failure") or "")
     kind = ("server started, warm-up refused" if failure.startswith("its first request failed")
             else "engine exited before answering" if failure.startswith("exited with code")
             else "engine did not answer in time")

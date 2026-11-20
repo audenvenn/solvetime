@@ -85,6 +85,20 @@ def wait_up(url: str, proc: subprocess.Popen, timeout: int, log_path: str | None
     return f"not answering after {timeout} s"
 
 
+def http_error(status: int, body: bytes) -> str:
+    """An engine's error reply in one line: its own message when the body is JSON with one (oMLX, LM Studio and the
+    OpenAI shape: {"error": {"message": ...}}), else the start of the body. Cutting the raw JSON at a fixed length
+    left records ending mid-field ('"type":"server_e')."""
+    text = body.decode("utf-8", "replace")
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return f"HTTP {status}: {text[:400]}"
+    error = data.get("error", data) if isinstance(data, dict) else data
+    message = error.get("message") or error.get("detail") if isinstance(error, dict) else error
+    return f"HTTP {status}: {str(message or text)[:400]}"
+
+
 def first_token(port: int, model: str, messages: list, extra: dict | None = None, max_tokens: int = 16,
                 timeout: float = 900) -> tuple[float, str, str]:
     """A streamed request straight to the engine: (seconds to its first token, content, reasoning)."""
@@ -95,7 +109,7 @@ def first_token(port: int, model: str, messages: list, extra: dict | None = None
     conn.request("POST", "/v1/chat/completions", json.dumps(body), {"Content-Type": "application/json"})
     resp = conn.getresponse()
     if resp.status != 200:   # an error is not an empty reply (e.g. oMLX's 507: the model does not fit its memory guard)
-        raise RuntimeError(f"HTTP {resp.status}: {resp.read()[:400].decode('utf-8', 'replace')}")
+        raise RuntimeError(http_error(resp.status, resp.read(65536)))
     first, content, reasoning = None, "", ""
     for raw in resp:
         line = raw.decode("utf-8", "ignore").strip()

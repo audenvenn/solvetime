@@ -35,7 +35,7 @@ import uuid
 
 from .engines import ENGINES, harness_version, missing
 from .models import MODELS, model as model_entry
-from .run import calibrate, first_token, memory_at_start, memory_counters, stop_on_term, wait_up
+from .run import calibrate, first_token, http_error, memory_at_start, memory_counters, stop_on_term, wait_up
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROMPTS = {
@@ -136,7 +136,7 @@ def stream(port: int, model: str, messages: list, max_tokens: int, temperature: 
     conn.request("POST", "/v1/chat/completions", json.dumps(body), {"Content-Type": "application/json"})
     resp = conn.getresponse()
     if resp.status != 200:
-        raise RuntimeError(f"HTTP {resp.status}: {resp.read()[:300]!r}")
+        raise RuntimeError(http_error(resp.status, resp.read(65536)))
     first = last = None
     text, usage = "", None
     for raw in resp:
@@ -264,7 +264,7 @@ def table(paths: list[str], exclude: dict | None = None) -> str:
 
     exclude: {speed file name: {test: [run numbers, from 1], "why": text}}, runs that are left out of the cells,
     each said in the row's notes (2026-11-19: two prefill runs that overlapped other work on the Mac)."""
-    from .report import DETACHED, engine_name
+    from .report import DETACHED, engine_name, readable
     lines = ["| Model | Engine | Settings | Bits per weight | Prefill 4K | Write T 0.6 | Write T 0 | Continue T 0.6 "
              "| Continue T 0 | Memory taken (system) | RSS | Footprint | Notes |",
              "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
@@ -275,7 +275,7 @@ def table(paths: list[str], exclude: dict | None = None) -> str:
             kind = ("server started, warm-up refused" if meta["load_failure"].startswith("its first request failed")
                     else "engine did not start")
             lines.append(f"| {meta['model']} | {engine_name(meta)} | {meta.get('settings') or 'defaults'} | | | | | | | | | | "
-                         f"no speed result — {kind}: {meta['load_failure']} |")
+                         f"no speed result — {kind}: {readable(meta['load_failure'])} |")
             continue
         left_out = (exclude or {}).get(os.path.basename(p), {})
 

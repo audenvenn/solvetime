@@ -51,5 +51,31 @@ class Warmup(unittest.TestCase):
         self.assertTrue(thinking_switch(port, "m").startswith("probe failed: HTTP 507"))
 
 
+class ErrorMessage(unittest.TestCase):
+    def test_the_engines_own_message(self):
+        from solvetime.run import http_error
+        body = json.dumps({"error": {"message": "Cannot load Qwen3.8-27B-4bit: projected memory 15.90GB would exceed "
+                                                "the dynamic memory ceiling 15.85GB", "type": "server_error"}}).encode()
+        self.assertEqual(http_error(507, body), "HTTP 507: Cannot load Qwen3.8-27B-4bit: projected memory 15.90GB would "
+                                                "exceed the dynamic memory ceiling 15.85GB")
+        self.assertEqual(http_error(400, b'{"error": "No models loaded"}'), "HTTP 400: No models loaded")
+        self.assertEqual(http_error(502, b"<html>Bad Gateway</html>"), "HTTP 502: <html>Bad Gateway</html>")
+
+    def test_recorded_bodies_read_as_their_message(self):
+        from solvetime.report import readable
+        cut = ('its first request failed: HTTP 507: {"error":{"message":"Cannot load Qwen3.8-27B-4bit: projected memory '
+               '15.90GB would exceed the dynamic memory ceiling 15.85GB (current: 208.78MB, model: 15.70GB). Close other apps '
+               'to free RAM (macOS and other apps leave oMLX 15.84GB of the 21.00GB static cap, and oMLX itself uses '
+               '208.78MB of that), raise memory_guard_tier (safe \u2192 balanced \u2192 aggressive), or unload another '
+               'model.","type":"server_e')
+        self.assertEqual(readable(cut), "its first request failed: HTTP 507: Cannot load Qwen3.8-27B-4bit: projected "
+                         "memory 15.90GB would exceed the dynamic memory ceiling 15.85GB (current: 208.78MB, model: "
+                         "15.70GB). Close other apps to free RAM (macOS and other apps leave oMLX 15.84GB of the 21.00GB "
+                         "static cap, and oMLX itself uses 208.78MB of that), raise memory_guard_tier (safe \u2192 "
+                         "balanced \u2192 aggressive), or unload another model.")
+        plain = "exited with code -15: Error: Model loading was stopped"
+        self.assertEqual(readable(plain), plain)
+
+
 if __name__ == "__main__":
     unittest.main()

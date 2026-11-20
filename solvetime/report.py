@@ -29,6 +29,16 @@ def gb(n):
 # recorded version.
 DISPLAY: dict[str, str] = {}
 
+# Engines whose server runs outside the process tree solvetime starts (LM Studio's daemon detaches), so the RSS and
+# footprint read from that tree are not the engine's: the tables say "not measured" (2026-11-19: 0.2 GB for an
+# engine that held 19 GB).
+DETACHED = {"lmstudio"}
+
+
+def label(meta: dict) -> str:
+    """The engine's name with its settings beyond the defaults, if any: rows that must not be mistaken for each other."""
+    return engine_name(meta) + (f" ({meta['settings']})" if meta.get("settings") else "")
+
 
 def engine_name(meta: dict) -> str:
     """"kapitsa 0.2.36 (fe6a17a)": the engine, and its version without the engine's name repeated (or the name
@@ -85,12 +95,13 @@ def pct(k: int, n: int) -> str:
 
 
 def groups(root: str, notes: list | None = None):
-    """Runs of the same model, engine, build and pack, whatever their task sets, pooled: name -> dict."""
+    """Runs of the same model, engine, build, pack and settings, whatever their task sets, pooled: name -> dict.
+    A run with settings beyond the defaults never pools with one without them."""
     out = collections.OrderedDict()
     for meta, attempts in runs(root):
         if meta.get("load_failure"):
             continue
-        key = (meta["model"], meta["engine"], meta.get("version"), meta["pack"])
+        key = (meta["model"], meta["engine"], meta.get("version"), meta["pack"], meta.get("settings") or "")
         g = out.setdefault(key, {"meta": meta, "attempts": [], "sets": set(), "no_call": 0, "cut_off": 0,
                                  "replies": 0, "runs": [], "settings": [], "available": []})
         if (meta.get("settings") or "defaults") not in g["settings"]:
@@ -156,7 +167,8 @@ def time_table(root: str) -> str:
         n, solved = len(attempts), sum(a["solved"] for a in attempts)
         wall = sum(a["seconds"] for a in attempts)
         req = sum(a.get("request_seconds") or 0 for a in attempts)
-        toks = sum(a.get("completion_tokens") or 0 for a in attempts)
+        counted = [a["completion_tokens"] for a in attempts if a.get("completion_tokens") is not None]
+        toks = sum(counted) if counted else "not reported"   # oMLX returns no usage
         decode, prefill = engine_log_rates(meta["_dir"], meta["engine"])
         med = lambda v: f"{statistics.median(v):.0f} tok/s ({len(v)} requests)" if v else "not logged"
         sets = ", ".join(sorted({a["set"] for a in attempts}))
@@ -183,7 +195,7 @@ def pooled_table(root: str, notes: list | None = None) -> str:
              "Ended by malformed output | Replies without a tool call | Replies cut off at the token limit | "
              "Median time, solved attempts | Other failures |",
              "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
-    for (model, engine, version, pack), g in groups(root).items():
+    for (model, engine, version, pack, _settings), g in groups(root).items():
         att = g["attempts"]
         n, solved = len(att), sum(a["solved"] for a in att)
         malformed = sum(1 for a in att if a["failure"] in ("malformed output", "loop")
@@ -224,7 +236,7 @@ def pairwise_table(root: str) -> str:
                     return sum(a["solved"] for a in att), bad, len(att)
                 sa, ba, na = counts(ga)
                 sb, bb, nb = counts(gb_)
-                lines.append(f"| {model} | {engine_name(ga['meta'])} | {engine_name(gb_['meta'])} | {sa}/{na} vs {sb}/{nb} | "
+                lines.append(f"| {model} | {label(ga['meta'])} | {label(gb_['meta'])} | {sa}/{na} vs {sb}/{nb} | "
                              f"{pval(fisher(sa, na - sa, sb, nb - sb))} | {ba}/{na} vs {bb}/{nb} | "
                              f"{pval(fisher(ba, na - ba, bb, nb - bb))} |")
     return "\n".join(lines) + "\n"
@@ -252,12 +264,12 @@ def table(root: str) -> str:
         lines.append("| {} | {} | {} | {} | {} | {} | {} | {} | {}/{} | {} | {} | {} | {} | {} | {} | {} |".format(
             meta["model"], engine, meta["pack"], meta.get("settings") or "defaults", meta.get("bits_per_weight") or "",
             gb(meta.get("pack_bytes")),
-            gb(meta.get("peak_footprint_bytes")),
+            "not measured" if meta["engine"] in DETACHED else gb(meta.get("peak_footprint_bytes")),
             f"{meta['cold_start_seconds']:.0f} s" if meta.get("cold_start_seconds") else "",
             solved, n, f"{statistics.median(solved_secs):.0f} s" if solved_secs else "",
             f"{sum(secs) / solved:.0f} s" if solved else "nothing solved",
             f"{sum(secs) / 60:.1f} min" if secs else "",
-            f"{statistics.median(toks):.0f}" if toks else "", f"{statistics.median(reqs):.0f}" if reqs else "",
+            f"{statistics.median(toks):.0f}" if toks else "not reported", f"{statistics.median(reqs):.0f}" if reqs else "",
             ", ".join(f"{k} {v}" for k, v in failures.most_common()) or "none", gb(paged) if paged else "none"))
     return "\n".join(lines) + "\n"
 

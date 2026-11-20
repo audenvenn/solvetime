@@ -253,6 +253,7 @@ def main(argv=None):
                 proc.wait(60)
             except subprocess.TimeoutExpired:
                 os.killpg(proc.pid, signal.SIGKILL)
+        engine.cleanup()
         out.close()
         log.close()
         print(f"results: {path}")

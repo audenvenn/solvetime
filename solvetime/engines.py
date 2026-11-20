@@ -44,10 +44,17 @@ class Engine:
     clear_env: str = ""             # a prefix: the user's own variables with it are not passed to the server
     no_thinking: dict = field(default_factory=dict)   # request fields that turn thinking off, beyond
                                                      # chat_template_kwargs.enable_thinking (which it may ignore)
+    scratch: list = field(default_factory=list)   # folders made for this run alone (oMLX's settings and SSD
+                                                  # cache), removed when the run ends
 
     def server_env(self) -> dict:
         base = {k: v for k, v in os.environ.items() if not (self.clear_env and k.startswith(self.clear_env))}
         return dict(base, **self.env)
+
+    def cleanup(self) -> None:
+        """Remove the folders made for this run (oMLX's SSD cache can take half the free disk)."""
+        for folder in self.scratch:
+            shutil.rmtree(folder, ignore_errors=True)
 
     def version(self) -> str:
         if not self.version_command:
@@ -362,12 +369,14 @@ def _hf_snapshot(repo: str) -> str | None:
 
 def omlx(model: str, port: int) -> Engine:
     """oMLX (`omlx serve`, headless) on the same MLX 4-bit weights as mlx-lm (SOLVETIME_OMLX_MODEL: a model folder),
-    with its own defaults otherwise: memory guard "balanced", no SSD cache, its default speculation. It loads
+    with its own defaults otherwise: memory guard "balanced", its paged SSD KV cache on (up to half the free disk:
+    16 GB in the 27B's agent run on 2026-11-19), its default speculation. It loads
     models from a directory of model folders, so the folder is linked into a directory of its own.
     SOLVETIME_OMLX_MEMORY_GUARD: another tier (`--memory-guard`: safe, aggressive, off), shown in the tables.
     "balanced" refuses the 27B (15.70 GiB) on a 24 GB Mac: its ceiling was 13.2-15.5 GiB (2026-11-19).
     Each run gets a settings folder of its own (--base-path): oMLX saves its command-line flags into its
-    settings.json, so with the user's ~/.omlx one run's flags (a tier, a port) would carry over to the next."""
+    settings.json, so with the user's ~/.omlx one run's flags (a tier, a port) would carry over to the next.
+    The folder, SSD cache included, is removed when the run ends."""
     exe = os.environ.get("SOLVETIME_OMLX", shutil.which("omlx") or "omlx")
     src = build(model, "omlx")
     folder = os.path.realpath(src) if os.path.isdir(src) else (_hf_snapshot(src) or src)
@@ -390,7 +399,7 @@ def omlx(model: str, port: int) -> Engine:
                   [exe, "serve", "--base-path", base, "--model-dir", models, "--headless", "--host", "127.0.0.1",
                    "--port", str(port), *(["--memory-guard", guard] if guard else [])],
                   port, name, env={"OMLX_PORT": str(port)}, clear_env="OMLX_",
-                  settings=f"memory guard {guard}" if guard else "",
+                  settings=f"memory guard {guard}" if guard else "", scratch=[base],
                   version_command=[exe, "--version"], pack_dir=folder if os.path.isdir(folder) else None,
                   info=_files_info, start_timeout=900)
 

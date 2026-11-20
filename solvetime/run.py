@@ -419,6 +419,7 @@ def main(argv=None):
                 proc.wait(60)
             except subprocess.TimeoutExpired:
                 os.killpg(proc.pid, signal.SIGKILL)
+        engine.cleanup()
         with open(os.path.join(out_dir, "run.json"), "w") as f:
             json.dump(meta, f, indent=2)
         print(f"results: {out_dir}", flush=True)

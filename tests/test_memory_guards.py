@@ -50,6 +50,14 @@ class OMLXGuard(unittest.TestCase):
         e = self.engine()
         self.assertEqual(os.listdir(base), [])
 
+    def test_its_folder_goes_when_the_run_ends(self):
+        e = self.engine()
+        base = e.command[e.command.index("--base-path") + 1]
+        self.assertEqual(e.scratch, [base])
+        os.makedirs(os.path.join(base, "cache", "_gdn_sidecars"))
+        e.cleanup()
+        self.assertFalse(os.path.exists(base))
+
     def test_not_a_tier(self):
         with self.assertRaises(ValueError):
             self.engine(SOLVETIME_OMLX_MEMORY_GUARD="loose")

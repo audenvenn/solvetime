@@ -55,6 +55,14 @@ class Tables(unittest.TestCase):
         self.assertIn("| 18 | not reported |", report.time_table(self.root))
         self.assertIn("| not reported |", report.table(self.root))
 
+    def test_a_pack_by_its_published_name(self):
+        folder = "/Users/someone/models/Qwen3.8-27B-4bit"
+        self.run_dir("a-omlx", {"engine": "omlx", "version": "0.8.0", "pack": folder}, [attempt("t", 1, True)])
+        with mock.patch.dict(report.DISPLAY, {folder: "mlx-community/Qwen3.8-27B-4bit (b935172)"}):
+            for table in (report.pooled_table(self.root), report.table(self.root)):
+                self.assertIn("| mlx-community/Qwen3.8-27B-4bit (b935172) |", table)
+                self.assertNotIn(folder, table)
+
     def test_detached_footprint(self):
         self.run_dir("a-lmstudio", {"engine": "lmstudio", "version": "lmstudio llmster 0.0.27-1",
                                     "peak_footprint_bytes": 2e8}, [attempt("t", 1, True)])

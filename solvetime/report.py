@@ -35,6 +35,12 @@ DISPLAY: dict[str, str] = {}
 DETACHED = {"lmstudio"}
 
 
+def pack_name(pack: str) -> str:
+    """The name a table shows for a recorded pack (publish --names maps packs too, e.g. a local folder to the
+    Hugging Face repo and revision it equals)."""
+    return DISPLAY.get(pack, pack)
+
+
 def label(meta: dict) -> str:
     """The engine's name with its settings beyond the defaults, if any: rows that must not be mistaken for each other."""
     return engine_name(meta) + (f" ({meta['settings']})" if meta.get("settings") else "")
@@ -205,7 +211,7 @@ def pooled_table(root: str, notes: list | None = None) -> str:
                                               and a.get("exit_status") == "RepeatedFormatError"))
         secs = [a["seconds"] for a in att if a["solved"]]
         tasks = len({a["task"] for a in att})
-        lines.append(f"| {model} | {engine_name(g['meta'])} | {pack} | {'; '.join(g['settings'])} | "
+        lines.append(f"| {model} | {engine_name(g['meta'])} | {pack_name(pack)} | {'; '.join(g['settings'])} | "
                      f"{g['meta'].get('bits_per_weight') or ''} | {gb_range(g['available'])} | "
                      f"{tasks} ({', '.join(sorted(g['sets']))}) | {pct(solved, n)} | {malformed}/{n} | "
                      f"{g['no_call']} of {g['replies']} | {g['cut_off']} | "
@@ -250,7 +256,7 @@ def table(root: str) -> str:
     for meta, attempts in runs(root):
         engine = engine_name(meta)
         if meta.get("load_failure"):
-            lines.append(f"| {meta['model']} | {engine} | {meta['pack']} | {meta.get('settings') or 'defaults'} | | | | | "
+            lines.append(f"| {meta['model']} | {engine} | {pack_name(meta['pack'])} | {meta.get('settings') or 'defaults'} | | | | | "
                          f"does not start: {meta['load_failure']} | | | | | | | |")
             continue
         n = len(attempts)
@@ -262,7 +268,7 @@ def table(root: str) -> str:
         failures = collections.Counter(a["failure"].split(":")[0] for a in attempts if not a["solved"])
         paged = sum(a.get("pageouts_delta") or 0 for a in attempts) * 16384
         lines.append("| {} | {} | {} | {} | {} | {} | {} | {} | {}/{} | {} | {} | {} | {} | {} | {} | {} |".format(
-            meta["model"], engine, meta["pack"], meta.get("settings") or "defaults", meta.get("bits_per_weight") or "",
+            meta["model"], engine, pack_name(meta["pack"]), meta.get("settings") or "defaults", meta.get("bits_per_weight") or "",
             gb(meta.get("pack_bytes")),
             "not measured" if meta["engine"] in DETACHED else gb(meta.get("peak_footprint_bytes")),
             f"{meta['cold_start_seconds']:.0f} s" if meta.get("cold_start_seconds") else "",

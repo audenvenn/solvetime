@@ -238,7 +238,9 @@ def _gguf_info(engine: Engine) -> dict:
 def llama_cpp(model: str, port: int) -> Engine:
     """llama.cpp's llama-server on a GGUF (SOLVETIME_GGUF), all layers on the GPU, flash attention, the model's
     own chat template, plain decoding. SOLVETIME_LLAMA_SPEC=draft-mtp drafts with the model's MTP head, for a GGUF
-    that carries one (the Qwen3.6-35B-A3B UD-IQ2_XXS GGUF of the first results does not)."""
+    that carries one (the Qwen3.6-35B-A3B UD-IQ2_XXS GGUF of the first results does not). SOLVETIME_LLAMA_LORA: a
+    LoRA adapter GGUF applied on top (`--lora`), e.g. harness-hub's pi adapter for Qwen3.8-27B; shown in the tables.
+    The window (SOLVETIME_LLAMA_CTX) is shown when it is not the default."""
     gguf = build(model, "llama.cpp")
     ctx = os.environ.get("SOLVETIME_LLAMA_CTX", "65536")
     command = ["llama-server", "-m", gguf, "--port", str(port), "--host", "127.0.0.1", "-ngl", "999", "-fa", "on",
@@ -246,9 +248,17 @@ def llama_cpp(model: str, port: int) -> Engine:
     spec = os.environ.get("SOLVETIME_LLAMA_SPEC", "none")
     if spec != "none":
         command += ["--spec-type", spec]
+    lora = os.environ.get("SOLVETIME_LLAMA_LORA", "")
+    if lora:
+        if not os.path.isfile(lora):
+            raise ValueError(f"SOLVETIME_LLAMA_LORA={lora}: no such file")
+        command += ["--lora", lora]
+    settings = [f"context {ctx}"] if ctx != "65536" else []
+    settings += [f"speculation {spec}"] if spec != "none" else []
+    settings += [f"lora {os.path.basename(lora)}"] if lora else []
     return Engine("llama.cpp", model, os.path.basename(gguf) or "(set SOLVETIME_GGUF)", command, port,
                   os.path.basename(gguf), health_path="/health", version_command=["llama-server", "--version"],
-                  pack_dir=gguf or None, info=_gguf_info)
+                  pack_dir=gguf or None, info=_gguf_info, settings=", ".join(settings))
 
 
 def _ollama_models() -> str:

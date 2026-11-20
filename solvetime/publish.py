@@ -61,7 +61,8 @@ def main(argv=None):
     ap.add_argument("--notes", help="JSON list of engines that were not run, and why")
     ap.add_argument("--title", default="Results")
     ap.add_argument("--about", help="a Markdown file about these runs, placed after the summary line")
-    ap.add_argument("--names", help="a JSON object: the names the tables show for recorded build names")
+    ap.add_argument("--names", help="a JSON object: the names the tables show for recorded build names, and for "
+                    "recorded packs (e.g. a local model folder -> the Hugging Face repo and revision it equals)")
     ap.add_argument("--exclude", help="a JSON object: speed runs left out of the speed table, each with why: "
                     '{"speed-….jsonl": {"prefill": [2, 3], "why": "…"}} (run numbers from 1; the file is published)')
     args = ap.parse_args(argv)

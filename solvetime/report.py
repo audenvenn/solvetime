@@ -204,7 +204,8 @@ def time_table(root: str) -> str:
         wall = sum(a["seconds"] for a in attempts)
         req = sum(a.get("request_seconds") or 0 for a in attempts)
         counted = [a["completion_tokens"] for a in attempts if a.get("completion_tokens") is not None]
-        toks = sum(counted) if counted else "not reported"   # oMLX returns no usage
+        # oMLX returns no usage, or now and then; a sum over some attempts says how many
+        toks = (sum(counted) if len(counted) == n else f"{sum(counted)} ({len(counted)}/{n} attempts)") if counted else "not reported"
         decode, prefill = engine_log_rates(meta["_dir"], meta["engine"])
         med = lambda v: f"{statistics.median(v):.0f} tok/s ({len(v)} requests)" if v else "not logged"
         sets = ", ".join(sorted({a["set"] for a in attempts}))

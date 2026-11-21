@@ -21,7 +21,8 @@ class Fields(unittest.TestCase):
             self.assertEqual((body["temperature"], body["top_p"], body["top_k"], body["min_p"]), (1.0, 1.0, 0, 0.0))
             self.assertNotIn("enable_thinking", json.dumps(body))
         self.assertNotIn("reasoning_effort", body_on)                       # the template's default: high
-        self.assertEqual(body_off["reasoning_effort"], "none")
+        # a template variable only: llama.cpp gives a top-level reasoning_effort precedence and renders the default
+        self.assertNotIn("reasoning_effort", body_off)
         self.assertEqual(body_off["chat_template_kwargs"], {"reasoning_effort": "none"})
         self.assertEqual(models.thinking_fields("inkling-2-mini", "thinking"), {})
         self.assertEqual(models.thinking_fields("inkling-2-mini", "no-thinking", {"x": 1}), models.INKLING2_OFF)
@@ -59,8 +60,8 @@ class Probe(unittest.TestCase):
         self.addCleanup(server.shutdown)
         result = thinking_switch(server.server_address[1], "m", models.thinking_fields("inkling-2-mini", "no-thinking"),
                                  models.thinking_fields("inkling-2-mini", "thinking"))
-        self.assertEqual(seen[0]["reasoning_effort"], "none")
-        self.assertNotIn("reasoning_effort", seen[1])
+        self.assertEqual(seen[0]["chat_template_kwargs"], {"reasoning_effort": "none"})
+        self.assertNotIn("reasoning_effort", json.dumps(seen[1]))
         self.assertNotIn("enable_thinking", json.dumps(seen))
         self.assertEqual(result, "ignored: never thinks")                # no reasoning either way, from this fake
 

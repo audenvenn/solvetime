@@ -133,8 +133,13 @@ def settings_problems(meta: dict) -> list[str]:
         sent = {k: v for k, v in (meta.get("overrides_sent") or {}).items() if k in want.__dict__ and k != "extra"}
         if sent != expected:          # an engine's own fields for the same setting (reasoning_effort) may come on top
             problems.append(f"sampling sent {sent}, expected {expected}")
-    if meta.get("thinking_switch") not in ("honoured", None):
-        problems.append(f"the engine's thinking switch: {meta.get('thinking_switch')}")
+    # The thinking the run asked for is the thinking it got. A model can keep thinking with its switch off
+    # (Inkling 2 writes a short thinking block at reasoning_effort "none", 2026-11-21): for a run with thinking on
+    # that is no problem.
+    switch, mode = meta.get("thinking_switch"), meta.get("thinking")
+    fine = {"thinking": ("honoured", "ignored: always thinks"), "no-thinking": ("honoured", "ignored: never thinks")}
+    if switch is not None and switch not in fine.get(mode, ("honoured",)):
+        problems.append(f"the engine's thinking switch: {switch} (the run asked for {mode})")
     unknown = [t for t in meta.get("tasks") or [] if t not in TASKS]
     if unknown:
         problems.append(f"tasks solvetime does not have: {unknown}")

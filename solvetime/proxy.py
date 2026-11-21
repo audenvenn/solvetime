@@ -138,6 +138,10 @@ class Proxy:
                 self.end_headers()
                 first, text, usage, finish = None, "", None, None
                 buf = b""
+                # Chunked is not always a stream: oMLX 0.8 sends its JSON replies chunked too, with their usage in the
+                # body, not in data: lines, and the meter lost every one of them (rounds 2 and 3, found 2026-11-21)
+                sse = bool(row and row.get("stream"))
+                whole = b""
                 while True:
                     piece = resp.read1(65536) if hasattr(resp, "read1") else resp.read(65536)
                     if not piece:
@@ -145,6 +149,9 @@ class Proxy:
                     self.wfile.write(b"%x\r\n%s\r\n" % (len(piece), piece))
                     self.wfile.flush()
                     if row is None:
+                        continue
+                    if not sse:
+                        whole += piece
                         continue
                     buf += piece
                     while b"\n" in buf:
@@ -164,8 +171,12 @@ class Proxy:
                             text += d.get("content") or ""
                             finish = ch.get("finish_reason") or finish
                 if row is not None:  # recorded before the stream's last chunk reaches the client
-                    row.update(seconds=time.perf_counter() - t0, status=resp.status, ttft=first, finish=finish,
-                               reply=_fingerprint(text), **_usage(usage))
+                    if sse:
+                        row.update(seconds=time.perf_counter() - t0, status=resp.status, ttft=first, finish=finish,
+                                   reply=_fingerprint(text), **_usage(usage))
+                    else:
+                        row.update(seconds=time.perf_counter() - t0, status=resp.status)
+                        self._account(row, whole)
                     proxy.meter.add(row)
                     row["_added"] = True
                 self.wfile.write(b"0\r\n\r\n")

@@ -266,13 +266,19 @@ def main(argv=None):
         print(f"results: {path}")
 
 
+def prompt_size(rows: list[dict]) -> str:
+    """The prefill prompt's size in the model's own tokens: the same text is ~4K tokens for Qwen, ~5K for Inkling 2."""
+    n = [r["prompt_tokens"] for r in rows if r.get("test") == "prefill" and r.get("prompt_tokens")]
+    return f", {statistics.median(n) / 1000:.1f}K tokens" if n else ""
+
+
 def table(paths: list[str], exclude: dict | None = None) -> str:
     """Markdown: one row per engine and model, medians with ranges.
 
     exclude: {speed file name: {test: [run numbers, from 1], "why": text}}, runs that are left out of the cells,
     each said in the row's notes (2026-11-19: two prefill runs that overlapped other work on the Mac)."""
     from .report import DETACHED, engine_name, readable
-    lines = ["| Model | Engine | Settings | Bits per weight | Prefill 4K | Write T 0.6 | Write T 0 | Continue T 0.6 "
+    lines = ["| Model | Engine | Settings | Bits per weight | Prefill | Write T 0.6 | Write T 0 | Continue T 0.6 "
              "| Continue T 0 | Memory taken (system) | RSS | Footprint | Notes |",
              "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for p in paths:
@@ -312,7 +318,7 @@ def table(paths: list[str], exclude: dict | None = None) -> str:
                                      f"stopped during {failed['during']}: {failed['error']}" if failed else "") if x)
         lines.append(f"| {meta.get('model')} | {engine_name(meta)} | {meta.get('settings') or 'defaults'} "
                      f"| {meta.get('bits_per_weight') or ''} "
-                     f"| {cell('prefill', 'prefill_tok_s', '{:.0f}')} | "
+                     f"| {cell('prefill', 'prefill_tok_s', '{:.0f}')}{prompt_size(rows)} | "
                      + " | ".join(cell(f"decode {n} T={t}", "decode_tok_s", "{:.1f}") for n in PROMPTS for t in (0.6, 0.0))
                      + " | " + " | ".join(memory) + f" | {notes} |")
     return "\n".join(lines) + "\n"

@@ -59,6 +59,8 @@ def readable(failure: str) -> str:
 def unscored(meta: dict) -> str:
     """The status of a run whose engine never served an attempt, by what stopped it."""
     failure = readable(meta.get("load_failure") or "")
+    # the engine's message to its first sentence: the advice after it is the engine's, not a finding
+    failure = re.split(r"(?<=[.!?])\s+(?=[A-Z])", failure, maxsplit=1)[0]
     kind = ("server started, warm-up refused" if failure.startswith("its first request failed")
             else "engine exited before answering" if failure.startswith("exited with code")
             else "engine did not answer in time")
@@ -207,7 +209,7 @@ def time_table(root: str) -> str:
         # oMLX returns no usage, or now and then; a sum over some attempts says how many
         toks = (sum(counted) if len(counted) == n else f"{sum(counted)} ({len(counted)}/{n} attempts)") if counted else "not reported"
         decode, prefill = engine_log_rates(meta["_dir"], meta["engine"])
-        med = lambda v: f"{statistics.median(v):.0f} tok/s ({len(v)} requests)" if v else "not logged"
+        med = lambda v: f"{statistics.median(v):.0f} tok/s ({len(v)} requests)" if v else "no comparable timing logged"
         sets = ", ".join(sorted({a["set"] for a in attempts}))
         settings = meta.get("settings") or "defaults"
         lines.append(f"| {meta['model']} | {engine_name(meta)} | {sets} | {settings}"
@@ -318,7 +320,7 @@ def table(root: str) -> str:
             f"{sum(secs) / solved:.0f} s" if solved else "nothing solved",
             f"{sum(secs) / 60:.1f} min" if secs else "",
             (f"{statistics.median(toks):.0f}" + (f" ({len(toks)}/{n} attempts)" if len(toks) < n else "")) if toks
-            else "not reported", f"{statistics.median(reqs):.0f}" if reqs else "",
+            else "not reported", f"{statistics.median(reqs):g}" if reqs else "",
             ", ".join(f"{k} {v}" for k, v in failures.most_common()) or "none", gb(paged) if paged else "none"))
     return "\n".join(lines) + "\n"
 

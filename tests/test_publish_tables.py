@@ -55,6 +55,12 @@ class Tables(unittest.TestCase):
         self.assertIn("| 18 | not reported |", report.time_table(self.root))
         self.assertIn("| not reported |", report.table(self.root))
 
+    def test_tokens_reported_by_some_attempts(self):
+        # oMLX reported usage for 1 of 16 attempts in round 3 (2026-11-21): the sum says how many
+        self.run_dir("a-omlx", {"engine": "omlx", "version": "0.8.1"},
+                     [attempt("t", 1, True, tokens=46), attempt("t", 2, True, tokens=None)])
+        self.assertIn("| 18 | 46 (1/2 attempts) |", report.time_table(self.root))
+
     def test_a_pack_by_its_published_name(self):
         folder = "/Users/someone/models/Qwen3.8-27B-4bit"
         self.run_dir("a-omlx", {"engine": "omlx", "version": "0.8.0", "pack": folder}, [attempt("t", 1, True)])

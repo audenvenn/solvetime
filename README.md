@@ -114,6 +114,38 @@ slower with it. This is one model build and one engine, with 32 attempts per arm
 [experiment page](published/2026-11-experiment-pi-lora-qwen3.8-27b-m6-24gb/README.md) has the results per task, the
 conditions, the first try we discarded, and the limits.
 
+## Third result: Inkling 2 Mini on a 24 GB Mac
+
+Inkling 2 Mini (Thinking Machines) is a 26B mixture of experts whose middle layers run three times per token; its
+card asks for a 32 GB Mac. Two configurations completed scored runs here, each on a build of about 3.6 to 3.8 bits
+per weight. We ran the 8 core tasks twice in each, on a Mac mini M6.
+
+| Engine and build | Settings | Attempts solved | Total time | Total attempt time per solve |
+|---|---|---|---|---|
+| llama.cpp b12600, InterpreticAI IQ3_XXS (3.6 bits per weight) | 32K window, RAM prompt cache off | 16/16 | 51.1 min | 192 s |
+| oMLX 0.8.1, mlx-community oQ3e-mtp (3.8 bits per weight) | memory guard "aggressive" (at its default guard, two launches reached no scored attempt); its DSpark drafter on, by default | 13/16 | 82.4 min | 380 s |
+
+What we learned:
+
+- **Support decided most of it.**
+  - **llama.cpp.** At b12600, its first release with the model, its Mac backend does not support multiplying
+    NVFP4 weights, and the unsloth GGUFs we checked keep the model's NVFP4 experts. Measured with llama-bench,
+    unsloth's build processed prompts 11x slower and generated 2.2x slower than the scored file: an NVFP4-free
+    3-bit build of IQ3_XXS from another uploader.
+  - **oMLX.** Its support was released the morning of the round (0.8.1).
+  - **The rest:**
+    - Ollama's only builds are the 20 GB checkpoint, which we did not try;
+    - mlx-lm's support is a draft pull request;
+    - in LM Studio, kapitsa, MTPLX and raceline (ours) we found none.
+- **oMLX's default guard stopped it twice.** Once it refused to load the model, with its ceiling at 11.1 GiB. The
+  second time it loaded the model, then refused the first prompt. With its aggressive guard it ran, with 80 request
+  aborts under memory pressure in its log. Its three failed attempts ended in API errors.
+- **The model kept thinking at its lowest reasoning effort.** In the speed tests, every 512-token reply was all
+  reasoning.
+
+The [results page](published/2026-11-inkling-2-mini-m6-24gb/README.md) has each run's conditions, the speed tests
+and the engines not run.
+
 ## What it measures
 
 - **Solved**: a hidden check decides; the agent never sees it, and files it must not edit (such as the tests)

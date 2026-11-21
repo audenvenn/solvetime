@@ -32,7 +32,7 @@ import time
 import urllib.request
 
 from .engines import ENGINES, Engine, harness_version, missing
-from .models import MODELS, model as model_entry
+from .models import MODELS, model as model_entry, thinking_fields
 from .proxy import Overrides, Proxy
 from .sandbox import Sandbox, SandboxedEnvironment
 from .tasks import TASKS
@@ -130,14 +130,15 @@ def first_token(port: int, model: str, messages: list, extra: dict | None = None
     return (first if first is not None else time.monotonic() - t0), content, reasoning
 
 
-def thinking_switch(port: int, model: str, no_thinking: dict | None = None) -> str:
-    """Does the engine honour the thinking switch (chat_template_kwargs.enable_thinking, with the engine's own
-    fields for "off" if it has any)? Probed both ways."""
+def thinking_switch(port: int, model: str, off: dict | None = None, on: dict | None = None) -> str:
+    """Does the engine honour the model's thinking switch (models.thinking_fields: by default the template's
+    enable_thinking)? Probed both ways."""
     q = [{"role": "user", "content": "What is 17 * 23? Answer with the number only."}]
+    off = {"chat_template_kwargs": {"enable_thinking": False}} if off is None else off
+    on = {"chat_template_kwargs": {"enable_thinking": True}} if on is None else on
     try:
-        _, c_off, r_off = first_token(port, model, q, {"chat_template_kwargs": {"enable_thinking": False},
-                                                       **(no_thinking or {})}, 64)
-        _, c_on, r_on = first_token(port, model, q, {"chat_template_kwargs": {"enable_thinking": True}}, 64)
+        _, c_off, r_off = first_token(port, model, q, off, 64)
+        _, c_on, r_on = first_token(port, model, q, on, 64)
     except (OSError, http.client.HTTPException, RuntimeError) as e:
         return f"probe failed: {e}"
     off = bool(r_off) or "<think>" in c_off
@@ -401,7 +402,9 @@ def main(argv=None):
             meta["load_failure"] = f"its first request failed: {e}"[:600]
             print(f"does not start: {meta['load_failure']}", flush=True)
             return
-        meta["thinking_switch"] = thinking_switch(engine.port, engine.api_model, engine.no_thinking)
+        meta["thinking_switch"] = thinking_switch(engine.port, engine.api_model,
+                                                  thinking_fields(args.model, "no-thinking", engine.no_thinking),
+                                                  thinking_fields(args.model, "thinking"))
         overrides = sampling(args.model, args.thinking)
         meta["overrides_sent"] = {k: v for k, v in overrides.__dict__.items() if v is not None}
         meta.update(engine.pack_info())

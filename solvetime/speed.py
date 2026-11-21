@@ -34,7 +34,7 @@ import time
 import uuid
 
 from .engines import ENGINES, harness_version, missing
-from .models import MODELS, model as model_entry
+from .models import MODELS, model as model_entry, thinking_fields
 from .run import calibrate, first_token, http_error, memory_at_start, memory_counters, stop_on_term, wait_up
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -126,8 +126,9 @@ def stream(port: int, model: str, messages: list, max_tokens: int, temperature: 
            no_thinking: dict | None = None):
     """-> (seconds to the first token, seconds from the first to the last, text, the engine's usage).
 
-    Thinking off: chat_template_kwargs.enable_thinking, plus the engine's own fields for it (LM Studio and Ollama
-    ignore chat_template_kwargs and need reasoning_effort "none")."""
+    Thinking off: the model's switch (models.thinking_fields), by default chat_template_kwargs.enable_thinking plus
+    the engine's own fields for it (LM Studio and Ollama ignore chat_template_kwargs and need reasoning_effort
+    "none"); Inkling 2's is reasoning_effort "none"."""
     body = {"model": model, "messages": messages, "max_tokens": max_tokens, "stream": True, "temperature": temperature,
             "stream_options": {"include_usage": True}, "chat_template_kwargs": {"enable_thinking": False},
             **SAMPLING.get(temperature, {}), **(no_thinking or {})}
@@ -213,7 +214,7 @@ def main(argv=None):
         test = "warm-up"
         try:
             stream(engine.port, engine.api_model, [{"role": "user", "content": PROMPTS["write"]}], 64, 0.6,
-                   no_thinking=engine.no_thinking)
+                   no_thinking=thinking_fields(args.model, "no-thinking", engine.no_thinking))
             test = "prefill"
             for _ in range(args.runs):
                 content = f"Request {uuid.uuid4().hex}.\n\n{body}\n\nIn one sentence: what does the code above do?"
@@ -221,7 +222,7 @@ def main(argv=None):
                 # runtime returns max_tokens - 1 (lmstudio-ai/lmstudio-bug-tracker#2602), nor from MTPLX 2.12.3
                 # (27B, 2026-11-19); the first token's time is the measure, whatever follows it
                 ttft, _, _, usage = stream(engine.port, engine.api_model, [{"role": "user", "content": content}], 8, 0.0,
-                                           no_thinking=engine.no_thinking)
+                                           no_thinking=thinking_fields(args.model, "no-thinking", engine.no_thinking))
                 n = usage.get("prompt_tokens") or len(tok.encode(content).ids) + 10
                 record(test="prefill", prompt_tokens=n, ttft_s=ttft, prefill_tok_s=n / ttft)
             for name, prompt in PROMPTS.items():
@@ -232,7 +233,7 @@ def main(argv=None):
                         with MemorySampler(proc.pid) as mem:
                             ttft, span, text, usage = stream(engine.port, engine.api_model,
                                                              [{"role": "user", "content": content}], 512, temperature,
-                                                             no_thinking=engine.no_thinking)
+                                                             no_thinking=thinking_fields(args.model, "no-thinking", engine.no_thinking))
                         n = len(tok.encode(text).ids)
                         record(test=test, completion_tokens=n,
                                engine_completion_tokens=usage.get("completion_tokens"), ttft_s=ttft,

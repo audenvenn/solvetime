@@ -212,6 +212,19 @@ def memory_at_start() -> dict:
             "compressed": v.get("Pages occupied by compressor"), "cached_files": v.get("File-backed pages")}
 
 
+def calibrated(calibrate_fn=None, timeout: float = 10.0) -> dict:
+    """The calibration, then a wait until the GPU memory it used is released. It stays wired for about a second
+    after the calibration's process ends (2.1 GB on 2026-11-21: 2.62 GB before, 4.73 GB at once, 2.67 GB a second
+    later), and a memory reading taken at once counted it as memory the other apps held: "estimated available
+    before launch" read 2-3.5 GB low. -> the calibration's fields and the seconds the wait took."""
+    wired_before = memory_at_start()["wired"]
+    result = (calibrate_fn or calibrate)()
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < timeout and memory_at_start()["wired"] > wired_before + 300_000_000:
+        time.sleep(0.25)
+    return {**result, "calibration_release_seconds": round(time.monotonic() - t0, 2)}
+
+
 def calibrate() -> dict:
     """The GPU's speed on a fixed workload (MLX, when installed), measured in a process that ends before the engine
     starts, so that none of its memory is held during the run."""
@@ -376,8 +389,8 @@ def main(argv=None):
             "pack": engine.pack, "settings": engine.settings, "command": engine.command, "harness": harness_version(), "thinking": args.thinking,
             "sampling": sampling(args.model, args.thinking).__dict__, "agent": "mini-swe-agent " + _mini_version(),
             "step_limit": STEP_LIMIT, "wall_seconds": WALL_SECONDS, "mac": _mac(), "started": time.strftime("%F %T"),
-            "tasks": names, "attempts": args.attempts, **calibrate(), "memory_before": memory_counters()}
-    meta["memory_at_start"] = memory_at_start()   # after the calibration's process has ended, before the engine starts
+            "tasks": names, "attempts": args.attempts, **calibrated(calibrate), "memory_before": memory_counters()}
+    meta["memory_at_start"] = memory_at_start()   # after the calibration's memory is released, before the engine starts
     with open(os.path.join(out_dir, "run.json"), "w") as f:   # written again at the end; a run killed outright
         json.dump(meta, f, indent=2)                           # (no "finished") still leaves what it was
     log = open(os.path.join(out_dir, "engine.log"), "w")

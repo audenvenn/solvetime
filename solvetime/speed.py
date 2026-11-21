@@ -35,7 +35,8 @@ import uuid
 
 from .engines import ENGINES, harness_version, missing
 from .models import MODELS, model as model_entry, thinking_fields
-from .run import calibrate, first_token, http_error, memory_at_start, memory_counters, stop_on_term, wait_up
+from .run import (calibrate, calibrated, first_token, http_error, memory_at_start, memory_counters,
+                  stop_on_term, wait_up)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROMPTS = {
@@ -182,7 +183,7 @@ def main(argv=None):
     path = os.path.join(args.out, time.strftime("speed-%Y%m%d-%H%M%S") + f"-{engine.name}-{args.model}.jsonl")
     meta = {"engine": engine.name, "ours": engine.ours, "version": engine.version(), "model": args.model,
             "pack": engine.pack, "settings": engine.settings, "command": engine.command, "harness": harness_version(),
-            "note": args.note, **calibrate()}
+            "note": args.note, **calibrated(calibrate)}
     out = open(path, "w")
     log = open(path.replace(".jsonl", ".engine.log"), "w")
     meta["available_before_start"] = system_available()   # before the engine starts: the baseline

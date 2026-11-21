@@ -88,5 +88,31 @@ class LMStudioLike(unittest.TestCase):
             self.assertEqual(r["completion_tokens"], 511)
 
 
+    def test_reasoning_tokens_count(self):
+        # A model that keeps thinking with thinking off (Inkling 2 at reasoning_effort "none" writes a thinking block,
+        # 2026-11-21): its reasoning was timed, so it is counted, and recorded as reasoning.
+        handler = signal.getsignal(signal.SIGTERM)
+        self.addCleanup(signal.signal, signal.SIGTERM, handler)
+        port = free_port()
+
+        def fake(model, port):   # no fields of its own for "off": the fake keeps thinking
+            return Engine("fake", model, "m", [sys.executable, "-c", SERVER, str(port)], port, "m", start_timeout=60)
+
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.dict(speed.ENGINES, {"fake": fake}), \
+                mock.patch.object(speed, "missing", lambda engine: None), \
+                mock.patch.object(speed, "tokenizer", lambda model: Words()), \
+                mock.patch.object(speed, "calibrate", lambda: {}):
+            speed.main(["--engine", "fake", "--model", "qwen3.5-9b", "--port", str(port), "--out", d, "--runs", "1"])
+            path = [os.path.join(d, f) for f in os.listdir(d) if f.endswith(".jsonl")][0]
+            with open(path) as f:
+                rows = [json.loads(line) for line in f]
+        decodes = [r for r in rows if r["test"].startswith("decode")]
+        self.assertEqual(len(decodes), 4)
+        for r in decodes:
+            self.assertEqual((r["completion_tokens"], r["reasoning_tokens"]), (511, 511))
+            self.assertGreater(r["decode_tok_s"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

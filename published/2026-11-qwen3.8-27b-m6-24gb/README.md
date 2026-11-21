@@ -28,6 +28,17 @@ Runs from 2026-11-18 15:11:17 to 2026-11-19 22:28:00. Agent: mini-swe-agent 2.4.
   | oMLX, guard "aggressive" (11-19 15:54) | 15.6 GB | 3.1 GB |
   | MTPLX (11-19 21:16) | 13.3 GB | 5.4 GB |
 
+  **Corrected on 2026-11-21.** The estimated available memory reads low, here and in the tables below. Both
+  readings were taken the moment solvetime's GPU calibration process had ended, before macOS released the
+  memory that process had used. That memory stays wired for about a second: 2.1 GB in a test on 2026-11-21.
+  - **The size of the error.** At these launches wired memory read 5.3–6.5 GB, against about 2.4–2.8 GB at idle.
+    So the estimate reads low by roughly 2.5–4 GB.
+  - **The speed table.** "Memory taken (system)" counts from the same reading, so it reads low by about as much.
+  - **Not affected.** The anonymous-memory readings leave wired memory out. The engines started seconds later,
+    after the release.
+
+  The records stay as measured; solvetime #53 reads the memory after the release.
+
 - **The model.** Qwen3.8-27B, a dense model (no experts) with 64 layers: 48 linear-attention (Gated DeltaNet)
   layers and 16 full-attention layers, one in every four. raceline, kapitsa, LM Studio and MTPLX run the build
   each picks or recommends for a 24 GB Mac. mlx-lm and oMLX recommend none, so they run the mlx-community MLX 4-bit

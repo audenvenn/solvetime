@@ -40,6 +40,15 @@ class FakeEngine(http.server.BaseHTTPRequestHandler):
             return
         reply = json.dumps({"choices": [{"message": {"role": "assistant", "content": "hello"}, "finish_reason": "stop"}],
                             "usage": usage, "timings": {"prompt_ms": 7.0}}).encode()
+        if body.get("chunked_json"):   # a JSON reply sent chunked, as oMLX 0.8 sends them
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Transfer-Encoding", "chunked")
+            self.end_headers()
+            for part in (reply[:20], reply[20:]):
+                self.wfile.write(b"%x\r\n%s\r\n" % (len(part), part))
+            self.wfile.write(b"0\r\n\r\n")
+            return
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(reply)))
@@ -83,6 +92,17 @@ class ProxyTest(unittest.TestCase):
         self.assertEqual((row["prompt_tokens"], row["completion_tokens"], row["cached_tokens"]), (11, 3, 5))
         self.assertEqual(row["finish"], "stop")
         self.assertEqual(row["timings"], {"prompt_ms": 7.0})
+
+    def test_a_json_reply_sent_chunked_is_accounted(self):
+        # oMLX sends its JSON replies chunked; the meter read only data: lines from them and lost their usage
+        # (rounds 2 and 3, found 2026-11-21)
+        self.proxy.meter.take()
+        status, data = self.post({"model": "m", "messages": [{"role": "user", "content": "hi"}], "chunked_json": True})
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(data)["choices"][0]["message"]["content"], "hello")
+        (row,) = self.proxy.meter.take()
+        self.assertEqual((row["prompt_tokens"], row["completion_tokens"]), (11, 3))
+        self.assertEqual(row["finish"], "stop")
 
     def test_streaming_passes_through(self):
         self.proxy.meter.take()

@@ -157,6 +157,24 @@ def main(argv=None):
                 with open(os.path.join(args.out, "speed", f), "w", encoding="utf-8") as fh:
                     fh.write(text)
                 size += len(text.encode())
+    # A pack recorded as a local folder is published under the name --names gives it (the repo and revision the
+    # folder equals): the folder's path tells a reader nothing they can use (2026-11-21).
+    for n in runs:
+        path = os.path.join(args.out, "runs", n, "run.json")
+        meta = json.load(open(path))
+        if meta.get("pack") in report.DISPLAY:
+            meta["pack"] = report.DISPLAY[meta["pack"]]
+            with open(path, "w") as f:
+                json.dump(meta, f, indent=2)
+    for n in speeds:
+        path = os.path.join(args.out, "speed", n)
+        rows = [json.loads(line) for line in open(path) if line.strip()]
+        if any(r.get("pack") in report.DISPLAY for r in rows):
+            for r in rows:
+                if r.get("pack") in report.DISPLAY:
+                    r["pack"] = report.DISPLAY[r["pack"]]
+            with open(path, "w") as f:
+                f.writelines(json.dumps(r) + "\n" for r in rows)
     exclude = json.load(open(args.exclude)) if args.exclude else {}
     if exclude:   # published beside the data, so a reader sees what was left out and why
         with open(os.path.join(args.out, "speed-exclusions.json"), "w") as f:
@@ -203,7 +221,7 @@ def main(argv=None):
               "tasks solved. Summed proxy request duration: the requests' durations added up; with retries it can "
               "exceed the elapsed time. Decode and prefill during the run: from "
               "each engine's own log, medians over the requests that wrote at least 64 tokens and that read at "
-              "least 256 new tokens. Elapsed totals describe each listed configuration, and include the time "
+              "least 256 new tokens; an engine whose log has no timing of its own for these phases says so. Elapsed totals describe each listed configuration, and include the time "
               "spent on failed attempts.", "",
               report.time_table(root), "",
               "## Each run", "",
@@ -214,10 +232,12 @@ def main(argv=None):
     speed_paths = [os.path.join(args.out, "speed", n) for n in speeds]
     if speed_paths:
         lines += ["## Speed", "",
-                  "`solvetime speed`: thinking off, after one uncounted warm-up; prefill on a 4K-token prompt, decode "
-                  "of up to 512 tokens on two prompts, three runs each (median, range). Memory taken (system): what "
-                  "the system had available before the engine started, minus the least it had while the engine ran "
-                  "(free, inactive, speculative and purgeable pages), on an otherwise quiet machine.", "",
+                  "`solvetime speed`: thinking off, by each model's own switch, after one uncounted warm-up; prefill on "
+                  "a prompt of Python standard-library source (its size in the model's own tokens is in the cell), "
+                  "decode of up to 512 tokens on two prompts, three runs each (median, range). Memory taken (system): "
+                  "what the system had available before the engine started, minus the least it had while the "
+                  "decode requests ran, which is when it is sampled (free, inactive, speculative and purgeable "
+                  "pages); other processes can change it.", "",
                   speed.table(speed_paths, exclude), ""]
         if exclude:
             lines[-2:-1] = ["Runs left out of a cell are named in its row's notes, and listed with the reason in "

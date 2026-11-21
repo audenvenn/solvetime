@@ -49,6 +49,7 @@ class Model:
     sampling: dict                 # "thinking" / "no-thinking" -> the card's request fields
     tokenizer: str                 # the Hugging Face repo whose tokenizer.json counts tokens in the speed test
     builds: dict = field(default_factory=dict)   # engine -> its build of this model
+    drafter_files: tuple = ()      # files of a build that hold a separate drafter, not among `params`: left out of bits
 
 
 MODELS = {m.name: m for m in [
@@ -77,7 +78,7 @@ MODELS = {m.name: m for m in [
           "thinkingmachines/Inkling-2-Mini", {
         "omlx": "mlx-community/Inkling-2-Mini-oQ3e-mtp",                 # oMLX's oQ build ("needs oMLX 0.8.1")
         "ollama": "inkling-2-mini",                                      # its default tag: the 20 GB checkpoint
-    }),
+    }, drafter_files=("mtp.safetensors",)),   # oQ builds keep their DSpark drafter there (0.64 GB)
     Model("qwen3.5-9b", "Qwen/Qwen3.5-9B", 9_653_104_368 - 456_010_480, QWEN3_SAMPLING, "Qwen/Qwen3.5-9B", {
         "raceline": "qwen3.5-9b",
         "kapitsa": "qwen3.5-9b",

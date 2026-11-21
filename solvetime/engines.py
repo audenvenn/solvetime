@@ -23,7 +23,7 @@ import sys
 import tempfile
 from dataclasses import dataclass, field
 
-from .models import BUILD_VARIABLE, build, model as model_entry, text_params
+from .models import BUILD_VARIABLE, MODELS, build, model as model_entry, text_params
 
 
 @dataclass
@@ -93,14 +93,16 @@ class Engine:
 
 HOME = os.path.expanduser("~")
 
-def text_weight_bytes(folder: str | None) -> int | None:
-    """Bytes of the tensors in a folder's *.safetensors that are not the vision tower (headers only)."""
+def text_weight_bytes(folder: str | None, skip_files: tuple = ()) -> int | None:
+    """Bytes of the tensors in a folder's *.safetensors that are not the vision tower (headers only), leaving out
+    `skip_files`: a separate drafter, which the model's parameter count does not include (oMLX's oQ builds of
+    Inkling 2 keep their DSpark drafter in mtp.safetensors)."""
     if not folder or not os.path.isdir(folder):
         return None
     total = 0
     for root, _, files in os.walk(folder):
         for f in files:
-            if not f.endswith(".safetensors"):
+            if not f.endswith(".safetensors") or f in skip_files:
                 continue
             with open(os.path.join(root, f), "rb") as fh:
                 n = int.from_bytes(fh.read(8), "little")
@@ -113,7 +115,8 @@ def text_weight_bytes(folder: str | None) -> int | None:
 
 
 def _files_info(engine: "Engine") -> dict:
-    return {"pack_bytes": engine.pack_bytes(), "weights_bytes": (w := text_weight_bytes(engine.pack_dir)),
+    skip = model_entry(engine.model).drafter_files if engine.model in MODELS else ()
+    return {"pack_bytes": engine.pack_bytes(), "weights_bytes": (w := text_weight_bytes(engine.pack_dir, skip)),
             "bits_per_weight": bits(w, engine.model)}
 
 

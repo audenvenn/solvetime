@@ -30,9 +30,11 @@ QWEN3_SAMPLING = {
 # Inkling 2's card gives one sampling setting, temperature 1.0; the rest is sent neutral so that engines' own
 # defaults (llama.cpp's top_k 40, top_p 0.95, min_p 0.05) do not differ. Its template ignores enable_thinking: depth
 # is `reasoning_effort` (none ... max, or 0.0-0.99), "high" when absent. Thinking runs send none, so the template's
-# default applies; no-thinking runs send "none", at the top level and as a template variable, since engines pass one
-# or the other to the template.
-INKLING2_OFF = {"reasoning_effort": "none", "chat_template_kwargs": {"reasoning_effort": "none"}}
+# default applies. No-thinking runs send "none" as a template variable only: llama.cpp b12600 gives a top-level
+# reasoning_effort precedence and then renders the default, 0.9 (its /apply-template, 2026-11-21), and oMLX 0.8.1
+# forwards a top-level one only where the template variable is not set. Even at "none" the model writes a short
+# thinking block (llama.cpp, 2026-11-21), so a probe of the switch says "ignored: always thinks".
+INKLING2_OFF = {"chat_template_kwargs": {"reasoning_effort": "none"}}
 INKLING2_SAMPLING = {
     "thinking": {"temperature": 1.0, "top_p": 1.0, "top_k": 0, "min_p": 0.0},
     "no-thinking": {"temperature": 1.0, "top_p": 1.0, "top_k": 0, "min_p": 0.0, "extra": INKLING2_OFF},

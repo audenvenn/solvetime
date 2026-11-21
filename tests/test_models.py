@@ -19,7 +19,10 @@ class ModelTable(unittest.TestCase):
             self.assertEqual(set(m.sampling), set(THINKING), m.name)
             for thinking in THINKING:
                 self.assertIsInstance(sampling(m.name, thinking), Overrides)
-            self.assertEqual(sampling(m.name, "no-thinking").enable_thinking, False)
+            # thinking off: the template's enable_thinking, or the model's own switch (Inkling 2: reasoning_effort)
+            off = sampling(m.name, "no-thinking")
+            self.assertTrue(off.enable_thinking is False or models.thinking_fields(m.name, "no-thinking"), m.name)
+            self.assertNotEqual(models.thinking_fields(m.name, "no-thinking"), models.thinking_fields(m.name, "thinking"))
         self.assertEqual(set(models.BUILD_VARIABLE), set(engines.ENGINES))
 
     def test_unknown_model(self):

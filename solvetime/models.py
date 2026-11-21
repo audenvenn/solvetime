@@ -27,6 +27,17 @@ QWEN3_SAMPLING = {
                     "enable_thinking": False},
 }
 
+# Inkling 2's card gives one sampling setting, temperature 1.0; the rest is sent neutral so that engines' own
+# defaults (llama.cpp's top_k 40, top_p 0.95, min_p 0.05) do not differ. Its template ignores enable_thinking: depth
+# is `reasoning_effort` (none ... max, or 0.0-0.99), "high" when absent. Thinking runs send none, so the template's
+# default applies; no-thinking runs send "none", at the top level and as a template variable, since engines pass one
+# or the other to the template.
+INKLING2_OFF = {"reasoning_effort": "none", "chat_template_kwargs": {"reasoning_effort": "none"}}
+INKLING2_SAMPLING = {
+    "thinking": {"temperature": 1.0, "top_p": 1.0, "top_k": 0, "min_p": 0.0},
+    "no-thinking": {"temperature": 1.0, "top_p": 1.0, "top_k": 0, "min_p": 0.0, "extra": INKLING2_OFF},
+}
+
 
 @dataclass(frozen=True)
 class Model:
@@ -56,6 +67,14 @@ MODELS = {m.name: m for m in [
         "omlx": "mlx-community/Qwen3.8-27B-4bit",
         "ollama": "qwen3.8:27b",
         "lmstudio": "qwen/qwen3.8-27b",
+    }),
+    # 128 experts, 8 active; layers 6-17 run three times per token. Text parameters from the official checkpoint's
+    # safetensors headers (ed40e7d), counted by hand: each NVFP4 byte holds two weights and the quantization scales
+    # are left out, which text_params() would not do. The checkpoint carries no MTP head; the GGUF counts 40 fewer.
+    Model("inkling-2-mini", "thinkingmachines/Inkling-2-Mini", 26_070_390_312, INKLING2_SAMPLING,
+          "thinkingmachines/Inkling-2-Mini", {
+        "omlx": "mlx-community/Inkling-2-Mini-oQ3e-mtp",                 # oMLX's oQ build ("needs oMLX 0.8.1")
+        "ollama": "inkling-2-mini",                                      # its default tag: the 20 GB checkpoint
     }),
     Model("qwen3.5-9b", "Qwen/Qwen3.5-9B", 9_653_104_368 - 456_010_480, QWEN3_SAMPLING, "Qwen/Qwen3.5-9B", {
         "raceline": "qwen3.5-9b",
@@ -122,3 +141,14 @@ def text_params(name: str) -> int | None:
         with open(CACHE, "w") as f:
             json.dump(cached, f, indent=1)
     return count or None
+
+
+def thinking_fields(name: str, mode: str, engine_no_thinking: dict | None = None) -> dict:
+    """The request fields that select thinking ("thinking") or none ("no-thinking") for a model. Qwen: the
+    template's enable_thinking, plus the engine's own fields for "off" (LM Studio and Ollama need reasoning_effort
+    "none"). A model with its own switch (Inkling 2: reasoning_effort) gives its fields in `extra`."""
+    s = model(name).sampling[mode]
+    if "enable_thinking" in s:
+        on = s["enable_thinking"]
+        return {"chat_template_kwargs": {"enable_thinking": on}, **({} if on else (engine_no_thinking or {}))}
+    return dict(s.get("extra") or {})

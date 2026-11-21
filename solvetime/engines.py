@@ -243,10 +243,13 @@ def llama_cpp(model: str, port: int) -> Engine:
     The window (SOLVETIME_LLAMA_CTX) is shown when it is not the default. SOLVETIME_LLAMA_CACHE_RAM: the RAM prompt
     cache in MiB (`--cache-ram`; 0 turns it off). Its default, 8192, keeps whole earlier conversation states (2.0-2.6
     GB each for Qwen3.8-27B at 16K) beside the model, which an agent's one conversation does not use: on a 24 GB
-    Mac it pushed a 14.35 GB model into 9.5 GB of swap and critical pressure (2026-11-20)."""
+    Mac it pushed a 14.35 GB model into 9.5 GB of swap and critical pressure (2026-11-20). SOLVETIME_LLAMA_SERVER: the
+    llama-server to run (default: the one on PATH), e.g. a release build newer than Homebrew's; its version line
+    names the build."""
     gguf = build(model, "llama.cpp")
     ctx = os.environ.get("SOLVETIME_LLAMA_CTX", "65536")
-    command = ["llama-server", "-m", gguf, "--port", str(port), "--host", "127.0.0.1", "-ngl", "999", "-fa", "on",
+    exe = os.environ.get("SOLVETIME_LLAMA_SERVER", "llama-server")
+    command = [exe, "-m", gguf, "--port", str(port), "--host", "127.0.0.1", "-ngl", "999", "-fa", "on",
                "--jinja", "-c", ctx]
     spec = os.environ.get("SOLVETIME_LLAMA_SPEC", "none")
     if spec != "none":
@@ -264,7 +267,7 @@ def llama_cpp(model: str, port: int) -> Engine:
     settings += [f"speculation {spec}"] if spec != "none" else []
     settings += [f"lora {os.path.basename(lora)}"] if lora else []
     return Engine("llama.cpp", model, os.path.basename(gguf) or "(set SOLVETIME_GGUF)", command, port,
-                  os.path.basename(gguf), health_path="/health", version_command=["llama-server", "--version"],
+                  os.path.basename(gguf), health_path="/health", version_command=[exe, "--version"],
                   pack_dir=gguf or None, info=_gguf_info, settings=", ".join(settings))
 
 

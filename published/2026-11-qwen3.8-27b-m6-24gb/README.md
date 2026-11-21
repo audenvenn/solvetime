@@ -218,6 +218,15 @@ Total time: the attempts end to end (agent, sandbox and engine). Per solved task
 | qwen3.8-27b | MTPLX 2.12.3 | core | defaults | 16 | 0 | 71.4 min |  | 484 | 138 | 1.6 min | not logged | not logged |
 
 
+**Corrected on 2026-11-21.** oMLX's "Tokens written" reads "not reported", here and in the table below, but oMLX
+did report usage with each reply.
+- **The real figure.** Its 121 replies to the agent hold 59,883 tokens. Tokens of aborted requests and of replies
+  the agent did not keep are not in that figure.
+- **Why.** solvetime's proxy, which counts the tokens, took oMLX's chunked replies for streams and lost their
+  counts. It is fixed in solvetime #58.
+
+The records stay as measured.
+
 ## Each run
 
 Peak footprint is the engine's phys_footprint, which leaves out clean memory-mapped pages: it understates an engine that maps its weights from the file. To compare memory across engines, use the speed section's memory taken from the system.

@@ -98,6 +98,14 @@ not test it.
   | With the adapter, extended | 12:49:03 | 14/16 | 26.9 min | 15.3 GB | 2.5 GB |
   | Without the adapter, extended | 13:17:15 | 14/16 | 35.5 min | 15.9 GB | 1.9 GB |
 
+  **Corrected on 2026-11-21.** The estimated available memory reads low by roughly 3–3.7 GB. It was read the
+  moment solvetime's GPU calibration process had ended, before macOS released the memory that process had used.
+  At these launches wired memory read 5.9–6.3 GB, against about 2.6–2.8 GB at idle.
+  - **Not affected.** All four runs carry about the same offset, so the order between them stands. The
+    anonymous-memory readings are not affected either, and the engines started after the release.
+
+  The records stay as measured; solvetime #53 reads the memory after the release.
+
   Both runs without the adapter, one before and one after the runs with it, took longer than both runs with it.
   The first one started with the least estimated available memory and the most anonymous memory of the four.
   Its memory pressure alternated between normal and warning in its first minutes. The last one started with the

@@ -1,7 +1,7 @@
 # Inkling 2 Mini on a 24 GB Mac mini (M6), November 2026
 
 Machine: Apple M6, 24 GB, macOS 27.2.
-Runs from 2026-11-21 12:44:18 to 2026-11-21 15:09:44. Agent: mini-swe-agent 2.4.6; limits: 50 steps, and a 900 s budget the agent checks before each query (a query in flight and its retries can run past it). Sampling sent with every request: temperature 1, top-p 1, top-k 0, min-p 0. Tables made with solvetime 0.1.0.dev0 (d632180-dirty).
+Runs from 2026-11-21 12:44:18 to 2026-11-21 15:09:44. Agent: mini-swe-agent 2.4.6; limits: 50 steps, and a 900 s budget the agent checks before each query (a query in flight and its retries can run past it). Sampling sent with every request: temperature 1, top-p 1, top-k 0, min-p 0. Tables made with solvetime 0.1.0.dev0 (2cafd8b-dirty).
 
 ## About these runs
 
@@ -119,6 +119,45 @@ Runs from 2026-11-21 12:44:18 to 2026-11-21 15:09:44. Agent: mini-swe-agent 2.4.
 
   oMLX's token counts and bits per weight were corrected in its records after the round, from its replies and its
   files, and the records keep the values first recorded beside them.
+- **Addendum: MTPLX 2.13.1 (2026-11-22).** One check, the day after round 3's runs; no scored suite. Its date,
+  engine version, harness and memory conditions all differ from the rows above.
+  - **Support.** MTPLX 2.13.0 added Inkling 2 Mini on 2026-11-22, and 2.13.1 followed the same day. At round 3's
+    runs, MTPLX 2.12.3 had none.
+  - **The build.** Youssofal/Inkling-2-Mini-MTPLX-Bare-Speed at 84a7701, the release's listed pack for 24 GB Macs on
+    M3 or later.
+    - **Size:** 16.02 GB for the whole pack, its vision tower and MTP drafter included. That is 4.52 bits per weight
+      for the text model alone.
+    - **Its source.** It lists the same upstream model-shard and drafter hashes as Inkling 2 Mini at ed40e7d. Its
+      quantization differs from round 3's two scored builds.
+    - **Checked:** all 21 pack files matched their Hugging Face digests, recorded before the download, and all 18
+      files that its SHA256SUMS lists matched it.
+  - **The check.** One inventory attempt at MTPLX's default memory and context settings, on solvetime 48f61a0. Round
+    3's runs used ee9e319 and 0c8e140.
+    - **Loading.** MTPLX reported a 55.7-second model load and planned its own 24,576-token window ("24G Mac: engine
+      budget 18.0G, weights 14.9G", "tight machine"). solvetime's clock read 64.9 s when its own warm-up request
+      ended in a refusal.
+    - **The requests.** The attempt sent 45 requests, retries included, for three agent prompts. Requests 1 and 15
+      returned bash calls that ran. MTPLX's memory guard declined 42 others before prefill and stopped one during
+      prefill, and the task check failed.
+    - **The guard's figures.** For the agent's refusals it estimated 1.71 to 2.29 GiB available after reclaiming its
+      own caches, with shortfalls of 0.04 to 0.66 GiB ("the other apps on this Mac leave 2.0 GiB free, and this
+      prompt needs about 0.2 GiB more than that").
+    - **Setup.** It also declined solvetime's warm-up and both thinking probes. The probe recorded that as "ignored:
+      never thinks", which is corrected in the record (solvetime #69).
+  - **Memory.** Just before launch solvetime estimated 13.6 GB available and counted 7.4 GB of anonymous pages, with
+    other applications open.
+    - **Other applications.** About seven minutes before launch, nine Claude Code processes summed to 3.68 GiB of
+      resident memory, which can include shared pages. At the first pressure warning, top's eight largest also
+      showed the window server, WebKit and a remote-desktop app.
+    - **During the check.** At the 21:50:19 pressure warning, 18.6 GB was wired system-wide and the compressor held
+      3.2 GB; top showed the MTPLX server at 17G.
+    - **solvetime's own gate.** Its 17 GB pre-launch check timed out before launching MTPLX, with a last reading of
+      15.9 GB of room. It was lowered to 15.5 GB, and MTPLX launched at 15.6 GB of room (13.5 GB estimated
+      available). Room counts reclaimable file cache. Neither threshold changes MTPLX's guard, and its memory
+      settings stayed at their defaults.
+  - **Not scored.** The maintainer stopped after this check: no scored suite or second attempt was run, and none of
+    MTPLX's memory settings changed. Round 2's MTPLX run of the 27B was scored, 0/16, and was likewise not rerun.
+    [mtplx-check.md](mtplx-check.md) has the plan, the refusals and the replies.
 
 ## Agent tasks, each engine build pooled over its task sets
 
@@ -134,7 +173,7 @@ Solved: the attempt's final workspace passed the task's check, work done before 
 | inkling-2-mini | LM Studio llmster 0.0.27-1 | none in its catalog | |  | | | not run: no support found | | | | | | We found no lmstudio-community build, and its installed runtimes predate support: its llama.cpp runtime (2.73.0) predates llama.cpp's Inkling 2 Mini support (b12600, 2026-11-20), and its MLX runtime relies on mlx-lm, whose support is a draft pull request. We checked the catalog on Hugging Face and the installed runtimes; no load was attempted. |
 | inkling-2-mini | mlx-lm 0.32.2 | mlx-community/Inkling-2-Mini-4bit, 17.3 GB, made with the draft pull request | |  | | | not run: no support in a release | | | | | | Inkling 2 Mini support is a draft pull request (ml-explore/mlx-lm#2086), not reviewed on 2026-11-21, and the release we have (0.32.2) has none. mlx-community's 4-bit build is made with that branch and was not tried. |
 | inkling-2-mini | kapitsa 0.2.39 (checked; installed here: 0.2.36) | none in its catalog | |  | | | not run: no support found | | | | | | Inkling 2 is not mentioned in its releases, issues or pull requests on 2026-11-21. No load was attempted. |
-| inkling-2-mini | MTPLX 2.12.3 | no pack | |  | | | not run: no support found | | | | | | We found no Inkling 2 support or pack. |
+| inkling-2-mini | MTPLX 2.13.1, an addendum on 2026-11-22 (at round 3's runs on 11-21, 2.12.3 had no Inkling support) | Youssofal/Inkling-2-Mini-MTPLX-Bare-Speed (84a7701, 16.02 GB, 4.52 bits per weight) | |  | | | not run: no scored suite (one check ran) | | | | | | MTPLX 2.13 added Inkling 2 Mini the day after round 3, with Bare Speed as its listed pack for 24 GB. In one check at its default memory and context settings, it loaded the pack, planned its own 24,576-token window, and returned two bash calls that ran: requests 1 and 15 of the attempt's 45, retries included. Its memory guard declined 42 of the others before prefill and stopped one during prefill ('the other apps on this Mac leave 2.0 GiB free, and this prompt needs about 0.2 GiB more than that'), and the task check failed. Other applications were open: 7.4 GB of anonymous pages at launch. The maintainer stopped after this check, with no scored suite and MTPLX's settings unchanged. Details: mtplx-check.md. |
 | inkling-2-mini | raceline (ours) 0.8.1 | no build | |  | | | not run: no support | | | | | | Inkling 2 Mini's looped architecture would need a new implementation in raceline, which is in maintenance mode: a cache per pass, 128-expert MoE, and window and global attention with relative positions. |
 
 
@@ -185,5 +224,5 @@ Peak footprint is the engine's phys_footprint, which leaves out clean memory-map
 - inkling-2-mini, LM Studio llmster 0.0.27-1 (none in its catalog): no support found. We found no lmstudio-community build, and its installed runtimes predate support: its llama.cpp runtime (2.73.0) predates llama.cpp's Inkling 2 Mini support (b12600, 2026-11-20), and its MLX runtime relies on mlx-lm, whose support is a draft pull request. We checked the catalog on Hugging Face and the installed runtimes; no load was attempted.
 - inkling-2-mini, mlx-lm 0.32.2 (mlx-community/Inkling-2-Mini-4bit, 17.3 GB, made with the draft pull request): no support in a release. Inkling 2 Mini support is a draft pull request (ml-explore/mlx-lm#2086), not reviewed on 2026-11-21, and the release we have (0.32.2) has none. mlx-community's 4-bit build is made with that branch and was not tried.
 - inkling-2-mini, kapitsa 0.2.39 (checked; installed here: 0.2.36) (none in its catalog): no support found. Inkling 2 is not mentioned in its releases, issues or pull requests on 2026-11-21. No load was attempted.
-- inkling-2-mini, MTPLX 2.12.3 (no pack): no support found. We found no Inkling 2 support or pack.
+- inkling-2-mini, MTPLX 2.13.1, an addendum on 2026-11-22 (at round 3's runs on 11-21, 2.12.3 had no Inkling support) (Youssofal/Inkling-2-Mini-MTPLX-Bare-Speed (84a7701, 16.02 GB, 4.52 bits per weight)): no scored suite (one check ran). MTPLX 2.13 added Inkling 2 Mini the day after round 3, with Bare Speed as its listed pack for 24 GB. In one check at its default memory and context settings, it loaded the pack, planned its own 24,576-token window, and returned two bash calls that ran: requests 1 and 15 of the attempt's 45, retries included. Its memory guard declined 42 of the others before prefill and stopped one during prefill ('the other apps on this Mac leave 2.0 GiB free, and this prompt needs about 0.2 GiB more than that'), and the task check failed. Other applications were open: 7.4 GB of anonymous pages at launch. The maintainer stopped after this check, with no scored suite and MTPLX's settings unchanged. Details: mtplx-check.md.
 - inkling-2-mini, raceline (ours) 0.8.1 (no build): no support. Inkling 2 Mini's looped architecture would need a new implementation in raceline, which is in maintenance mode: a cache per pass, 128-expert MoE, and window and global attention with relative positions.

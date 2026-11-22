@@ -136,7 +136,9 @@ What we learned:
   - **The rest:**
     - Ollama's only builds are the 20 GB checkpoint, which we did not try;
     - mlx-lm's support is a draft pull request;
-    - in LM Studio, kapitsa, MTPLX and raceline (ours) we found none.
+    - MTPLX 2.13 added support the next day. In a later, unscored check, MTPLX 2.13.1 loaded the 16 GB pack and
+      returned two working tool calls; its memory guard stopped the other 43 requests, retries included;
+    - in LM Studio, kapitsa and raceline (ours) we found none.
 - **oMLX's default guard stopped it twice.** Once it refused to load the model, with its ceiling at 11.1 GiB. The
   second time it loaded the model, then refused the first prompt. With its aggressive guard it ran, with 80 request
   aborts under memory pressure in its log. Its three failed attempts ended in API errors.

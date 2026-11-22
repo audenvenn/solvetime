@@ -96,9 +96,17 @@ HOME = os.path.expanduser("~")
 def text_weight_bytes(folder: str | None, skip_files: tuple = ()) -> int | None:
     """Bytes of the tensors in a folder's *.safetensors that are not the vision tower (headers only), leaving out
     `skip_files`: a separate drafter, which the model's parameter count does not include (oMLX's oQ builds of
-    Inkling 2 keep their DSpark drafter in mtp.safetensors)."""
+    Inkling 2 keep their DSpark drafter in mtp.safetensors). A LookAtMyQuant build keeps its tensors in one blob,
+    and its artifact.json lists each one's bytes."""
     if not folder or not os.path.isdir(folder):
         return None
+    artifact = os.path.join(folder, "artifact.json")
+    if os.path.isfile(artifact):
+        with open(artifact) as fh:
+            packed = json.load(fh)
+        if packed.get("format") == "opgraph-packed-1":
+            return sum(t["nbytes"] for name, t in packed["tensors"].items()
+                       if not re.search(r"visual|vision", name)) or None
     total = 0
     for root, _, files in os.walk(folder):
         for f in files:
@@ -225,11 +233,36 @@ def mlx_lm(model: str, port: int) -> Engine:
     # 2026-11-19, 43 of 128 replies, and each failed attempt ended on three in a row. Shown in the tables when set.
     limit = os.environ.get("SOLVETIME_MLX_MAX_TOKENS", "")
     limit = str(int(limit)) if limit else ""
-    return Engine("mlx-lm", model, path, [py, "-m", "mlx_lm.server", "--model", path, "--port", str(port),
+    # SOLVETIME_MLX_LOADER=lookatmyquant: a LookAtMyQuant build, served by mlx-lm's own server with LookAtMyQuant's
+    # runtime as the function that loads the model (launchers/lamq_mlx_server.py). The server, its tool-call parser
+    # and its prompt cache stay mlx-lm's; the model's linear layers and Metal kernels are LookAtMyQuant's. Shown in
+    # the tables, with LookAtMyQuant's version.
+    loader = os.environ.get("SOLVETIME_MLX_LOADER", "")
+    if loader not in ("", "lookatmyquant"):
+        raise ValueError(f"SOLVETIME_MLX_LOADER={loader}: the one loader known is lookatmyquant")
+    serve = [py, LOOKATMYQUANT_LAUNCHER] if loader else [py, "-m", "mlx_lm.server"]
+    settings = ([f"LookAtMyQuant runtime {_lookatmyquant(py)}"] if loader else []) + \
+        ([f"max tokens {limit}"] if limit else [])
+    return Engine("mlx-lm", model, path, [*serve, "--model", path, "--port", str(port),
                                           "--prompt-cache-size", "1", *(["--max-tokens", limit] if limit else [])],
                   port, path, version_command=[py, "-c", "import mlx_lm; print(mlx_lm.__version__)"],
                   pack_dir=path if os.path.isdir(path) else None, info=_files_info,
-                  settings=f"max tokens {limit}" if limit else "")
+                  settings=", ".join(settings))
+
+
+LOOKATMYQUANT_LAUNCHER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "launchers", "lamq_mlx_server.py")
+
+
+def _lookatmyquant(py: str) -> str:
+    """The LookAtMyQuant package's version and commit in the Python that serves it, e.g. "0.3.0 (5106923)"."""
+    r = subprocess.run([py, "-c", "import importlib.metadata as m, json; d = m.distribution('lookatmyquant'); "
+                        "u = json.loads(d.read_text('direct_url.json') or '{}'); "
+                        "print(d.version, (u.get('vcs_info') or {}).get('commit_id', '')[:7])"],
+                       capture_output=True, text=True)
+    if r.returncode:
+        return "(not installed)"
+    version, _, commit = r.stdout.strip().partition(" ")
+    return f"{version} ({commit})" if commit else version
 
 
 def _gguf_info(engine: Engine) -> dict:
@@ -477,6 +510,10 @@ def missing(engine: Engine) -> str | None:
                 "to one")
     if engine.name == "mlx-lm" and subprocess.run([exe, "-c", "import mlx_lm"], capture_output=True).returncode:
         return f"mlx-lm: {exe} cannot import mlx_lm. {INSTALL['mlx-lm']}"
+    if (engine.name == "mlx-lm" and LOOKATMYQUANT_LAUNCHER in engine.command
+            and subprocess.run([exe, "-c", "import runtime_mlx"], capture_output=True).returncode):
+        return (f"mlx-lm: {exe} cannot import runtime_mlx, LookAtMyQuant's runtime. pip install "
+                "git+https://github.com/ShinMegamiBoson/lookatmyquant beside mlx-lm")
     if engine.name == "ollama" and not os.path.isfile(_ollama_manifest(engine.api_model)):
         return f"ollama: {engine.api_model} is not pulled. `ollama pull {engine.api_model}` (with `ollama serve` running)"
     if engine.name == "lmstudio":   # from its files: any lms command starts the daemon

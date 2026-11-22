@@ -217,7 +217,7 @@ def main(argv=None):
         test = "warm-up"
         try:
             stream(engine.port, engine.api_model, [{"role": "user", "content": PROMPTS["write"]}], 64, 0.6,
-                   no_thinking=thinking_fields(args.model, "no-thinking", engine.no_thinking))
+                   no_thinking=thinking_fields(args.model, "no-thinking", engine.no_thinking, engine.own_switch_off))
             test = "prefill"
             for _ in range(args.runs):
                 content = f"Request {uuid.uuid4().hex}.\n\n{body}\n\nIn one sentence: what does the code above do?"
@@ -225,7 +225,7 @@ def main(argv=None):
                 # runtime returns max_tokens - 1 (lmstudio-ai/lmstudio-bug-tracker#2602), nor from MTPLX 2.12.3
                 # (27B, 2026-11-19); the first token's time is the measure, whatever follows it
                 ttft, _, _, usage, _ = stream(engine.port, engine.api_model, [{"role": "user", "content": content}], 8, 0.0,
-                                           no_thinking=thinking_fields(args.model, "no-thinking", engine.no_thinking))
+                                           no_thinking=thinking_fields(args.model, "no-thinking", engine.no_thinking, engine.own_switch_off))
                 n = usage.get("prompt_tokens") or len(tok.encode(content).ids) + 10
                 record(test="prefill", prompt_tokens=n, ttft_s=ttft, prefill_tok_s=n / ttft)
             for name, prompt in PROMPTS.items():
@@ -236,7 +236,7 @@ def main(argv=None):
                         with MemorySampler(proc.pid) as mem:
                             ttft, span, text, usage, reasoning = stream(engine.port, engine.api_model,
                                                              [{"role": "user", "content": content}], 512, temperature,
-                                                             no_thinking=thinking_fields(args.model, "no-thinking", engine.no_thinking))
+                                                             no_thinking=thinking_fields(args.model, "no-thinking", engine.no_thinking, engine.own_switch_off))
                         # the reply's text and its reasoning, if the model wrote any with thinking off (Inkling 2 at
                         # reasoning_effort "none"): all of it was timed
                         n_reasoning = len(tok.encode(reasoning).ids) if reasoning else 0

@@ -86,6 +86,7 @@ MODELS = {m.name: m for m in [
     Model("inkling-2-mini", "thinkingmachines/Inkling-2-Mini", 26_070_390_312, INKLING2_SAMPLING,
           "thinkingmachines/Inkling-2-Mini", {
         "omlx": "mlx-community/Inkling-2-Mini-oQ3e-mtp",                 # oMLX's oQ build ("needs oMLX 0.8.1")
+        "mtplx": "Youssofal/Inkling-2-Mini-MTPLX-Bare-Speed",            # MTPLX 2.13: its only pack for 24 GB
         "ollama": "inkling-2-mini",                                      # its default tag: the 20 GB checkpoint
     }, drafter_files=("mtp.safetensors",)),   # oQ builds keep their DSpark drafter there (0.64 GB)
     Model("qwen3.5-9b", "Qwen/Qwen3.5-9B", 9_653_104_368 - 456_010_480, QWEN3_SAMPLING, "Qwen/Qwen3.5-9B", {
@@ -155,7 +156,8 @@ def text_params(name: str) -> int | None:
     return count or None
 
 
-def thinking_fields(name: str, mode: str, engine_no_thinking: dict | None = None) -> dict:
+def thinking_fields(name: str, mode: str, engine_no_thinking: dict | None = None,
+                    own_switch_off: dict | None = None) -> dict:
     """The request fields that select thinking ("thinking") or none ("no-thinking") for a model. Qwen: the
     template's enable_thinking, plus the engine's own fields for "off" (LM Studio and Ollama need reasoning_effort
     "none"). A model with its own switch (Inkling 2: reasoning_effort) gives its fields in `extra`."""
@@ -163,4 +165,9 @@ def thinking_fields(name: str, mode: str, engine_no_thinking: dict | None = None
     if "enable_thinking" in s:
         on = s["enable_thinking"]
         return {"chat_template_kwargs": {"enable_thinking": on}, **({} if on else (engine_no_thinking or {}))}
-    return dict(s.get("extra") or {})
+    # A model with its own switch: only its fields, and the engine's `own_switch_off` for "off".
+    # - **The engine's no_thinking stays out.** It is for Qwen (#56: llama.cpp let a top-level reasoning_effort
+    #   override Inkling's template variable).
+    # - **own_switch_off goes in.** It is set only by an engine that reads no template variable: MTPLX's
+    #   enable_thinking.
+    return {**(s.get("extra") or {}), **((own_switch_off or {}) if mode == "no-thinking" else {})}

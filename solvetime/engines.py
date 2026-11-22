@@ -44,6 +44,7 @@ class Engine:
     clear_env: str = ""             # a prefix: the user's own variables with it are not passed to the server
     no_thinking: dict = field(default_factory=dict)   # request fields that turn thinking off, beyond
                                                      # chat_template_kwargs.enable_thinking (which it may ignore)
+    own_switch_off: dict = field(default_factory=dict)   # thinking off also for a model with its own switch
     scratch: list = field(default_factory=list)   # folders made for this run alone (oMLX's settings and SSD
                                                   # cache), removed when the run ends
 
@@ -215,10 +216,12 @@ def mtplx(model: str, port: int) -> Engine:
     fits (insufficient_memory; see the results' not-run notes): that entry is for larger Macs."""
     repo = build(model, "mtplx")
     exe = os.environ.get("SOLVETIME_MTPLX", shutil.which("mtplx") or "mtplx")
+    # Thinking off: MTPLX reads enable_thinking, at the top level or among the template's kwargs. It reads no
+    # other template variable, so Inkling 2's reasoning_effort "none" alone would leave it thinking at "high".
     return Engine("mtplx", model, repo, [exe, "serve", "--model", repo, "--port", str(port), "--no-auth", "--yes"],
                   port, repo, health_path="/health", version_command=[exe, "--version"],
                   pack_dir=os.path.join(HOME, ".mtplx/models", repo.replace("/", "--")) if repo else None,
-                  info=_files_info)
+                  info=_files_info, own_switch_off={"enable_thinking": False})
 
 
 def mlx_lm(model: str, port: int) -> Engine:

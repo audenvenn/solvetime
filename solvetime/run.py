@@ -416,7 +416,7 @@ def main(argv=None):
             print(f"does not start: {meta['load_failure']}", flush=True)
             return
         meta["thinking_switch"] = thinking_switch(engine.port, engine.api_model,
-                                                  thinking_fields(args.model, "no-thinking", engine.no_thinking),
+                                                  thinking_fields(args.model, "no-thinking", engine.no_thinking, engine.own_switch_off),
                                                   thinking_fields(args.model, "thinking"))
         overrides = sampling(args.model, args.thinking)
         meta["overrides_sent"] = {k: v for k, v in overrides.__dict__.items() if v is not None}

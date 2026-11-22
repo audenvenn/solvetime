@@ -33,6 +33,21 @@ class ModelTable(unittest.TestCase):
         for name in ("qwen3.8-27b", "qwen3.6-35b-a3b", "qwen3.5-9b"):
             self.assertEqual(sampling(name, "no-thinking").temperature, 0.7)
 
+    def test_thinking_off_on_an_engine_that_reads_no_template_variable(self):
+        own = {"chat_template_kwargs": {"reasoning_effort": "none"}}   # Inkling 2's thinking off (#56)
+        # MTPLX reads enable_thinking and no other template variable, so it is sent beside Inkling's own switch
+        mtplx = engines.mtplx("inkling-2-mini", 8890)
+        self.assertEqual(mtplx.own_switch_off, {"enable_thinking": False})
+        self.assertEqual(models.thinking_fields("inkling-2-mini", "no-thinking", mtplx.no_thinking, mtplx.own_switch_off),
+                         {**own, "enable_thinking": False})
+        self.assertEqual(models.thinking_fields("inkling-2-mini", "thinking", mtplx.no_thinking, mtplx.own_switch_off), {})
+        # every other engine's Inkling requests are as in round 3
+        for name in ("omlx", "llama.cpp"):
+            e = engines.ENGINES[name]("inkling-2-mini", 8890)
+            self.assertEqual(models.thinking_fields("inkling-2-mini", "no-thinking", e.no_thinking, e.own_switch_off), own)
+        # and MTPLX's Qwen requests are unchanged
+        self.assertEqual(mtplx.no_thinking, {})
+
     def test_unknown_model(self):
         with self.assertRaises(SystemExit):
             models.model("qwen9-1t")

@@ -32,6 +32,20 @@ class Scrub(unittest.TestCase):
             self.assertEqual(scrub(link), link)
         self.assertEqual(scrub("alicewonder and malice"), "alicewonder and malice")
 
+    def test_account_name_in_saved_traces(self):
+        # Each of these reached a published trace under the rule before (2026-11-22).
+        self.assertEqual(scrub(r"Nov 19 12:28 work\nalice\ndrwxr-xr-x@"), r"Nov 19 12:28 work\nuser\ndrwxr-xr-x@")
+        self.assertEqual(scrub(r"work\\nalice\\ndrwx"), r"work\\nuser\\ndrwx")   # escaped twice, in a tool message
+        self.assertEqual(scrub("/private/tmp/claude-501/-Users-alice-project-model/4a97"),
+                         "/private/tmp/claude-501/-Users-user-project-model/4a97")
+        self.assertEqual(scrub(r"96 Nov 15 19:03 claude-mcp-browser-bridge-alice\ndrwxrwxrwx"),
+                         r"96 Nov 15 19:03 claude-mcp-browser-bridge-user\ndrwxrwxrwx")
+        self.assertEqual(scrub("alice_backup and alice.local"), "user_backup and user.local")
+        # still kept: a longer word, and the public handle
+        self.assertEqual(scrub(r"\nmalice and unalice"), r"\nmalice and unalice")
+        for public in ("https://hf.co/alice/x", "thanks @alice", "github.com/alice"):
+            self.assertEqual(scrub(public), public)
+
     def test_host_names_full_name_and_addresses(self):
         line = "INFO - Auto-detected server aliases: ['localhost', '127.0.0.1', 'Alices-Mac-Mini.local', '192.168.1.2']"
         out = scrub(line)

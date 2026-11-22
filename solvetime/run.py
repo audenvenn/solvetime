@@ -99,6 +99,14 @@ def http_error(status: int, body: bytes) -> str:
     return f"HTTP {status}: {str(message or text)[:400]}"
 
 
+def stream_error(error) -> str:
+    """An engine's error sent inside a stream, after a 200, in one line. MTPLX sends its memory guard's refusal this
+    way (2026-11-22). A reader that skipped events without choices took it for an empty reply, and its thinking probe
+    recorded "ignored: never thinks"."""
+    message = (error.get("message") or error.get("detail")) if isinstance(error, dict) else error
+    return f"error in the stream: {str(message or error)[:400]}"
+
+
 def first_token(port: int, model: str, messages: list, extra: dict | None = None, max_tokens: int = 16,
                 timeout: float = 900) -> tuple[float, str, str]:
     """A streamed request straight to the engine: (seconds to its first token, content, reasoning)."""
@@ -119,6 +127,9 @@ def first_token(port: int, model: str, messages: list, extra: dict | None = None
             ev = json.loads(line[5:])
         except ValueError:
             continue
+        if ev.get("error"):
+            conn.close()
+            raise RuntimeError(stream_error(ev["error"]))
         for ch in ev.get("choices") or []:
             d = ch.get("delta") or {}
             piece, think = d.get("content") or "", d.get("reasoning_content") or d.get("reasoning") or ""

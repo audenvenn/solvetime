@@ -129,9 +129,9 @@ What we learned:
 
 - **Support decided most of it.**
   - **llama.cpp.** At b12600, its first release with the model, its Mac backend does not support multiplying
-    NVFP4 weights, and the unsloth GGUFs we checked keep the model's NVFP4 experts. Measured with llama-bench,
-    unsloth's build processed prompts 11x slower and generated 2.2x slower than the scored file: an NVFP4-free
-    3-bit build of IQ3_XXS from another uploader.
+    NVFP4 weights, and the unsloth GGUFs we checked keep the model's NVFP4 experts. Measured with llama-bench, on
+    the 2 CPU threads llama.cpp defaults to on this Mac, unsloth's build processed prompts 11x slower and generated
+    2.2x slower than the scored file: an NVFP4-free 3-bit build of IQ3_XXS from another uploader.
   - **oMLX.** Its support was released the morning of the round (0.8.1).
   - **The rest:**
     - Ollama's only builds are the 20 GB checkpoint, which we did not try;

@@ -196,7 +196,8 @@ speed tests and the memory measurement.
   and any setting beyond the defaults appear in every table. "Does not fit" is a
   result too, and the tables say how it was determined.
 - Every engine gets the same tasks, prompts, sampling (the model card's) and limits: 50 steps and 15
-  minutes per attempt.
+  minutes per attempt. Through round 4, Qwen3.8 ran at the Qwen3.5 and 3.6 cards' temperature of 0.6 rather than
+  its own 1.0 ([the 27B page's correction](published/2026-11-qwen3.8-27b-m6-24gb/README.md)).
 - Each task is attempted twice, and the tables show 95% intervals and exact tests rather than a best run.
 - Every attempt's trajectory and the raw numbers are published next to the tables.
 - Disclosure: the author also maintains [raceline](https://github.com/audenvenn/raceline), one of the

@@ -85,6 +85,14 @@ Runs from 2026-11-18 15:11:17 to 2026-11-19 22:28:00. Agent: mini-swe-agent 2.4.
   card's sampling. 50 steps. The agent checks a 900-second budget before it starts each query, so a query
   already in flight, and its retries, can run past it: the longest attempt lasted 47.2 minutes. A check scores
   the final workspace, so an attempt passes if its fix was in place, even when the agent then ended on an error.
+- **Corrected on 2026-11-22: the sampling.** "The model card's sampling" above is not accurate for Qwen3.8.
+  - **What was sent:** temperature 0.6, top_p 0.95, top_k 20, min_p 0 and presence_penalty 0. That is the Qwen3.5 and
+    3.6 cards' setting for precise coding tasks, which solvetime applied to Qwen3.8 too.
+  - **What Qwen3.8's card recommends:** temperature 1.0 in thinking mode.
+  - **The comparisons stand.** Every engine on this page got the same settings, so its comparisons are not affected.
+    The records stay as measured.
+  - **Later runs.** After round 4 (2026-11-22), solvetime runs Qwen3.8 at its card's 1.0, so later 27B results with
+    thinking are not directly comparable with this page's.
 - **Harness.** The rows ran on solvetime d0df79f (2026-11-18), 984f250, 9f793fc, 5dba5ea and e98dbd7
   (2026-11-19). The agent (mini-swe-agent 2.4.6), its prompts and limits, the sampling, the requests, the
   checks, the sandbox and the speed test did not change between them. The later commits changed only records,

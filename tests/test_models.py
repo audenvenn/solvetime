@@ -25,6 +25,14 @@ class ModelTable(unittest.TestCase):
             self.assertNotEqual(models.thinking_fields(m.name, "no-thinking"), models.thinking_fields(m.name, "thinking"))
         self.assertEqual(set(models.BUILD_VARIABLE), set(engines.ENGINES))
 
+    def test_each_qwen_runs_at_its_own_cards_temperature(self):
+        # Qwen3.8's card: 1.0 in thinking mode (until 2026-11-22 solvetime sent it the 3.5 and 3.6 cards' 0.6).
+        self.assertEqual(sampling("qwen3.8-27b", "thinking").temperature, 1.0)
+        for name in ("qwen3.6-35b-a3b", "qwen3.5-9b"):   # their cards' setting for precise coding tasks
+            self.assertEqual(sampling(name, "thinking").temperature, 0.6)
+        for name in ("qwen3.8-27b", "qwen3.6-35b-a3b", "qwen3.5-9b"):
+            self.assertEqual(sampling(name, "no-thinking").temperature, 0.7)
+
     def test_unknown_model(self):
         with self.assertRaises(SystemExit):
             models.model("qwen9-1t")

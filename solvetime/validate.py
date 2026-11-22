@@ -27,7 +27,7 @@ import tempfile
 
 from .models import MODELS
 from .run import COMMAND_SECONDS, STEP_LIMIT, THINKING, WALL_SECONDS, check, sampling
-from .sandbox import Sandbox
+from .sandbox import Sandbox, run_in_group
 from .tasks import TASKS
 
 AGENT = "mini-swe-agent 2.4.6"
@@ -108,8 +108,7 @@ def replay(task: dict, trajectory: dict) -> tuple[bool, str]:
             if moved:
                 cmd = moved.sub(new_base, cmd)
             try:
-                subprocess.run(box.command(cmd), shell=True, cwd=box.work, env=env, capture_output=True,
-                               timeout=COMMAND_SECONDS, start_new_session=True)
+                run_in_group(box.command(cmd), shell=True, cwd=box.work, env=env, timeout=COMMAND_SECONDS)
             except subprocess.TimeoutExpired:
                 pass
         return check(task, box)

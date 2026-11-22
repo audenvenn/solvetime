@@ -14,7 +14,7 @@ import subprocess
 
 from .engines import ENGINES, missing
 from .models import MODELS, build
-from .sandbox import Sandbox
+from .sandbox import Sandbox, run_in_group
 
 
 def main(argv=None):
@@ -41,8 +41,7 @@ def main(argv=None):
         probe = (f"echo sandboxed; ls {home} > /dev/null 2>&1 && echo 'home READABLE' || echo 'home not readable'; "
                  "curl -s -m 3 https://example.com > /dev/null 2>&1 && echo 'network REACHABLE' || echo 'no network'; "
                  "python3 -c 'import sys; print(\"task Python\", sys.version.split()[0])'")
-        r = subprocess.run(box.command(probe), shell=True, cwd=box.work, env=box.env, capture_output=True, text=True,
-                           timeout=60)
+        r = run_in_group(box.command(probe), shell=True, cwd=box.work, env=box.env, timeout=60)
         out = " / ".join(line.strip() for line in r.stdout.splitlines() if line.strip())
         ok = "home not readable" in out and "no network" in out
         print(f"  sandbox    {'ok' if ok else 'PROBLEM'}: {out}")

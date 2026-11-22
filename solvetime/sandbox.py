@@ -24,6 +24,7 @@ from __future__ import annotations
 import os
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -31,6 +32,51 @@ import tempfile
 from minisweagent.environments.local import LocalEnvironment, _run
 
 HOME = os.path.realpath(os.path.expanduser("~"))
+
+
+def run_in_group(args, *, timeout: float, kill_leftovers: bool = False, **kwargs) -> subprocess.CompletedProcess:
+    """subprocess.run with text output captured, in a session of its own: on a timeout its whole process group is
+    killed, as mini-swe-agent does for the agent's own commands. subprocess.run kills only its direct child.
+
+    Why (2026-11-22): round 4's bisect 2 check timed out, and four replays of it timed out too. Together they left
+    13 processes running in their workspaces for hours, each busy on a core. `kill_leftovers` also ends whatever is
+    still in the group when it returns (a check's)."""
+    proc = subprocess.Popen(args, start_new_session=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                            **kwargs)
+    try:
+        out, err = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_group(proc.pid)
+        out, err = proc.communicate()
+        raise subprocess.TimeoutExpired(args, timeout, output=out, stderr=err) from None
+    if kill_leftovers:
+        _kill_group(proc.pid)
+    return subprocess.CompletedProcess(args, proc.returncode, out, err)
+
+
+def _kill_group(pgid: int) -> None:
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def kill_inside(folder: str) -> int:
+    """Kill every process whose working directory is in `folder`, which a group kill misses if it left its group.
+    Returns how many there were."""
+    root = os.path.realpath(folder)
+    out = subprocess.run(["/usr/sbin/lsof", "-a", "-d", "cwd", "-Fpn"], capture_output=True, text=True).stdout
+    pid, killed = None, 0
+    for line in out.splitlines():
+        if line.startswith("p"):
+            pid = int(line[1:])
+        elif line.startswith("n") and pid and pid != os.getpid() and (line[1:] == root or line[1:].startswith(root + "/")):
+            try:
+                os.kill(pid, signal.SIGKILL)
+                killed += 1
+            except (ProcessLookupError, PermissionError):
+                pass
+    return killed
 TASK_VENV = os.environ.get("SOLVETIME_TASK_VENV", os.path.join(HOME, ".cache", "solvetime", "task-python"))
 
 
@@ -145,11 +191,12 @@ class Sandbox:
         wrote. Isolated mode, with the directory appended to sys.path: a file the agent created cannot shadow a
         standard module the check imports."""
         code = "import sys\nsys.path.append('')\n" + code
-        return subprocess.run(["/usr/bin/sandbox-exec", "-f", self.profile_path, task_python(), "-I", "-c", code],
-                              cwd=self.work, env=self.env, capture_output=True, text=True, timeout=timeout,
-                              start_new_session=True)
+        return run_in_group(["/usr/bin/sandbox-exec", "-f", self.profile_path, task_python(), "-I", "-c", code],
+                            cwd=self.work, env=self.env, timeout=timeout, kill_leftovers=True)
 
     def close(self):
+        """Removes the attempt's folders, after ending anything still running in them."""
+        kill_inside(self.base)
         shutil.rmtree(self.base, ignore_errors=True)
         shutil.rmtree(self.harness, ignore_errors=True)
 

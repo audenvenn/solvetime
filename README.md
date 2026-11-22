@@ -146,6 +146,34 @@ What we learned:
 The [results page](published/2026-11-inkling-2-mini-m6-24gb/README.md) has each run's conditions, the speed tests
 and the engines not run.
 
+## Fourth result: LookAtMyQuant's 2.1-bit Qwen3.8-27B on a 24 GB Mac
+
+[LookAtMyQuant](https://github.com/ShinMegamiBoson/lookatmyquant) compresses Qwen3.8-27B to 7.2 GB, 2.1 bits per
+weight, and fine-tunes it. On its own single-shot benchmarks it reports the original's math score (401/540), with
+HumanEval and MMLU a few points lower. We ran it as a coding agent on a Mac mini M6, the 8 core tasks twice, through
+the same server and settings as round 2's mlx-community 4-bit build: mlx-lm 0.32.2, replies up to 16,384 tokens.
+
+| Build | Bits per weight | Attempts solved | Total time | Total attempt time per solve |
+|---|---|---|---|---|
+| mlx-community 4-bit (round 2, 2026-11-19) | 4.43 | 9/16; four of its seven failures followed the server's out-of-memory failure | 162.7 min | 1085 s |
+| LookAtMyQuant 7.2 GB (2026-11-22) | 2.1 | 11/16 | 220.6 min | 1203 s |
+
+What we learned:
+
+- **The same outcomes in the first 12 attempts.** Both builds passed the same nine.
+- **Round 2's last four attempts got no reply.** Its server ran out of GPU memory in attempt 12. The 2.1-bit build
+  ran all 16 and passed two of those four.
+- **But it is slower on this M6:**
+  - decode is 5.4 against 9.4 tok/s, and prefill 168 against 289 tok/s;
+  - all five of its failures ended at the 15-minute limit.
+- **7.2 GB on disk, more in use.** Loaded, it takes 7.6 GB. A long prefill needs up to ~16 GB, and the run's
+  process peaked at 18.6 GB.
+- **How it was served.** LookAtMyQuant's runtime has no HTTP server and no tool calls. So its loader and kernels ran
+  inside mlx-lm's server. Its Inkling 2 Mini builds wait for a working tool-call route.
+
+The [results page](published/2026-11-lookatmyquant-qwen3.8-27b-m6-24gb/README.md) has each run's conditions, the
+speed tests and the memory measurement.
+
 ## What it measures
 
 - **Solved**: a hidden check decides; the agent never sees it, and files it must not edit (such as the tests)

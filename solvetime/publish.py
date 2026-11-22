@@ -78,8 +78,11 @@ def scrub(text: str, names: list[tuple[str, str]] | None = None, home: str = HOM
     temporary-directory id, host names, full name and network addresses are replaced.
     - **The account name** goes wherever it stands as a name of its own: the owner in `ls -l`, a line of its own
       after a JSON-escaped newline, or part of a name like -Users-<account>-project or bridge-<account>.
-    - **What is kept:** the account inside a longer word ("malice"), and the public handle in a github.com,
-      huggingface.co or hf.co link or after @.
+    - **What is kept:** the account inside a longer word ("malice"), and the public handle:
+      - in a github.com, githubusercontent.com, huggingface.co or hf.co link;
+      - after @;
+      - before .github.io;
+      - as the owner in a repo name, <account>/<repo>, when no slash comes before it.
 
     Workspace paths keep their shape (/var/folders/xx/user/T/solvetime-<id>/work),
     which a replay needs. An agent sometimes types the temporary directory from memory, cut short or
@@ -102,8 +105,13 @@ def scrub(text: str, names: list[tuple[str, str]] | None = None, home: str = HOM
     # Not after a letter or digit, unless that is a JSON escape's n, t or r: "work\nalice\n" in a saved trace.
     # The account in -Users-alice-project-model and claude-mcp-browser-bridge-alice, from an agent's listing of
     # /tmp, reached published traces under the rule before (2026-11-22).
-    public = r"(?<!github\.com/)(?<!huggingface\.co/)(?<!hf\.co/)(?<!@)"
-    return re.sub(rf"{public}(?:(?<![A-Za-z0-9])|(?<=\\[ntr])){re.escape(account)}(?![A-Za-z0-9])", "user", text)
+    def replace(m: re.Match) -> str:
+        before, after = m.string[max(0, m.start() - 24):m.start()], m.string[m.end():m.end() + 10]
+        if (re.search(r"(github\.com|githubusercontent\.com|huggingface\.co|hf\.co)/$|@$", before)
+                or after.startswith(".github.io") or (after.startswith("/") and not before.endswith("/"))):
+            return m.group(0)   # the public handle: a link, a mention, the Pages site, a repo's owner
+        return "user"
+    return re.sub(rf"(?:(?<![A-Za-z0-9])|(?<=\\[ntr])){re.escape(account)}(?![A-Za-z0-9])", replace, text)
 
 
 def copy_tree(src: str, dst: str) -> int:

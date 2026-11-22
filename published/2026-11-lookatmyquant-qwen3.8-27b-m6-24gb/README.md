@@ -114,6 +114,10 @@ Runs from 2026-11-19 11:28:04 to 2026-11-22 14:07:55. Agent: mini-swe-agent 2.4.
 - **Machine and conditions.** Mac mini (2026), Apple M6, 24 GB, macOS 27.2.
   - **The CPU.** System-wide CPU use was 1,173%, 218% and 107% of 1,200% at the start of the smoke test, the scored
     run and the speed test. Another project's CPU-bound search accounted for most of the first.
+    - **Corrected on 2026-11-22: the speed test's 107%.** It included one process solvetime had left running.
+      bisect 2's final check timed out at 14:05 on an endless loop. The test runner it had started then kept one
+      core busy until 21:45, because solvetime killed only the process it started directly (fixed in solvetime
+      #67). The speed test's work runs on the GPU, so the effect is likely small. The records stay as measured.
   - **Other sessions** were asked to keep memory low while the GPU was in use.
 - **Harness.** solvetime f643e93 for round 4, with #61 letting mlx-lm's server load a LookAtMyQuant build. Round 2's
   run was at 9f793fc.

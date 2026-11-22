@@ -35,7 +35,7 @@ import uuid
 
 from .engines import ENGINES, harness_version, missing
 from .models import MODELS, model as model_entry, thinking_fields
-from .run import (calibrate, calibrated, first_token, http_error, memory_at_start, memory_counters,
+from .run import (calibrate, calibrated, first_token, http_error, stream_error, memory_at_start, memory_counters,
                   stop_on_term, wait_up)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -147,6 +147,9 @@ def stream(port: int, model: str, messages: list, max_tokens: int, temperature: 
         if not line.startswith("data:") or line == "data: [DONE]":
             continue
         ev = json.loads(line[5:])
+        if ev.get("error"):   # a refusal inside the stream ends it: what came before is not a whole reply
+            conn.close()
+            raise RuntimeError(stream_error(ev["error"]))
         usage = ev.get("usage") or usage
         for ch in ev.get("choices") or []:
             d = ch.get("delta") or {}

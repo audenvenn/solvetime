@@ -14,6 +14,8 @@ Runs from 2026-11-19 11:28:04 to 2026-11-22 14:07:55. Agent: mini-swe-agent 2.4.
     - **Where 0.6 comes from.** It is the Qwen3.5 and 3.6 cards' setting for precise coding tasks.
     - **What Qwen3.8's card says.** It recommends temperature 1.0 in thinking mode, as the build's own
       `generation_config.json` does.
+    - **Later runs.** After this round, solvetime runs Qwen3.8 at its card's 1.0, so later 27B results with
+      thinking are not directly comparable with this page's.
 
   The rows:
   - **Round 4 (2026-11-22):** [LookAtMyQuant](https://github.com/ShinMegamiBoson/lookatmyquant)'s 7.2 GB build, 2.1

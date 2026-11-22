@@ -19,13 +19,22 @@ from dataclasses import dataclass, field
 
 CACHE = os.path.join(os.path.expanduser("~"), ".cache", "solvetime", "params.json")
 
-# The Qwen3.5, 3.6 and 3.8 cards' sampling for thinking and non-thinking use, sent with every request of a run.
+# The Qwen3.5 and 3.6 cards' sampling, sent with every request of a run: in thinking mode the cards' setting for
+# precise coding tasks (they give 1.0 for general tasks), and their non-thinking setting.
 QWEN3_SAMPLING = {
     "thinking": {"temperature": 0.6, "top_p": 0.95, "top_k": 20, "min_p": 0.0, "presence_penalty": 0.0,
                  "enable_thinking": True},
     "no-thinking": {"temperature": 0.7, "top_p": 0.8, "top_k": 20, "min_p": 0.0, "presence_penalty": 1.5,
                     "enable_thinking": False},
 }
+# Qwen3.8's card gives one thinking setting, temperature 1.0 with the same top_p, top_k, min_p and presence
+# penalty, and the same non-thinking one.
+# - **Through round 4 (2026-11-22)** solvetime ran Qwen3.8 at the 3.5 and 3.6 cards' 0.6: round 2's and round 4's
+#   thinking runs.
+#   The pi-LoRA experiment ran with thinking off.
+# - **So** later Qwen3.8 results with thinking are not directly comparable with those.
+QWEN38_SAMPLING = {"thinking": dict(QWEN3_SAMPLING["thinking"], temperature=1.0),
+                   "no-thinking": QWEN3_SAMPLING["no-thinking"]}
 
 # Inkling 2's card gives one sampling setting, temperature 1.0; the rest is sent neutral so that engines' own
 # defaults (llama.cpp's top_k 40, top_p 0.95, min_p 0.05) do not differ. Its template ignores enable_thinking: depth
@@ -62,7 +71,7 @@ MODELS = {m.name: m for m in [
         "ollama": "qwen3.6:35b-a3b",                                     # its default tag
         "lmstudio": "qwen/qwen3.6-35b-a3b",                              # its staff pick
     }),
-    Model("qwen3.8-27b", "Qwen/Qwen3.8-27B", 27_781_427_952 - 460_730_096, QWEN3_SAMPLING, "Qwen/Qwen3.5-9B", {
+    Model("qwen3.8-27b", "Qwen/Qwen3.8-27B", 27_781_427_952 - 460_730_096, QWEN38_SAMPLING, "Qwen/Qwen3.5-9B", {
         "raceline": "qwen3.8-27b",
         "kapitsa": "qwen3.8-27b",
         "mtplx": "Youssofal/Qwen3.8-27B-MTPLX-Bare-Speed",                # its "tight_fit" for 24 GB

@@ -43,8 +43,11 @@ class Scrub(unittest.TestCase):
         self.assertEqual(scrub("alice_backup and alice.local"), "user_backup and user.local")
         # still kept: a longer word, and the public handle
         self.assertEqual(scrub(r"\nmalice and unalice"), r"\nmalice and unalice")
-        for public in ("https://hf.co/alice/x", "thanks @alice", "github.com/alice"):
+        for public in ("https://hf.co/alice/x", "thanks @alice", "github.com/alice", "https://alice.github.io/2026/11/17/x",
+                       "the repo alice/raceline-qwen3.8-27b", "https://raw.githubusercontent.com/alice/solvetime/main/x"):
             self.assertEqual(scrub(public), public)
+        # a folder of that name in a path is not a repo's owner
+        self.assertEqual(scrub("ls /Volumes/alice/models"), "ls /Volumes/user/models")
 
     def test_host_names_full_name_and_addresses(self):
         line = "INFO - Auto-detected server aliases: ['localhost', '127.0.0.1', 'Alices-Mac-Mini.local', '192.168.1.2']"

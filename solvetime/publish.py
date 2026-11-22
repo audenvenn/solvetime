@@ -75,9 +75,13 @@ NAMES = local_names()
 def scrub(text: str, names: list[tuple[str, str]] | None = None, home: str = HOME, account: str = ACCOUNT,
           temp: tuple[str, str] | None = TEMP) -> str:
     """The records without what identifies this Mac and its user: the home directory becomes ~, the
-    temporary-directory id, host names, full name and network addresses are replaced, and so is the account name,
-    for instance as the owner in `ls -l`. A name after a slash, as in a github.com or huggingface.co link, is
-    left: it is the public handle. Workspace paths keep their shape (/var/folders/xx/user/T/solvetime-<id>/work),
+    temporary-directory id, host names, full name and network addresses are replaced.
+    - **The account name** goes wherever it stands as a name of its own: the owner in `ls -l`, a line of its own
+      after a JSON-escaped newline, or part of a name like -Users-<account>-project or bridge-<account>.
+    - **What is kept:** the account inside a longer word ("malice"), and the public handle in a github.com,
+      huggingface.co or hf.co link or after @.
+
+    Workspace paths keep their shape (/var/folders/xx/user/T/solvetime-<id>/work),
     which a replay needs. An agent sometimes types the temporary directory from memory, cut short or
     misspelled, so anything under this account's own /var/folders/<2>/ goes too, and so does anything that starts
     with the id's first 8 characters. The system accounts' folders (/var/folders/zz/...) are the same on every Mac
@@ -93,7 +97,13 @@ def scrub(text: str, names: list[tuple[str, str]] | None = None, home: str = HOM
     if temp:
         text = re.sub(rf"(/var/folders/){re.escape(temp[0])}/", r"\1xx/", text)
         text = re.sub(rf"{re.escape(temp[1][:8])}[A-Za-z0-9_+-]*", "user", text)
-    return re.sub(rf"(?<![/\w.@-]){re.escape(account)}(?![\w-])", "user", text) if account else text
+    if not account:
+        return text
+    # Not after a letter or digit, unless that is a JSON escape's n, t or r: "work\nalice\n" in a saved trace.
+    # The account in -Users-alice-project-model and claude-mcp-browser-bridge-alice, from an agent's listing of
+    # /tmp, reached published traces under the rule before (2026-11-22).
+    public = r"(?<!github\.com/)(?<!huggingface\.co/)(?<!hf\.co/)(?<!@)"
+    return re.sub(rf"{public}(?:(?<![A-Za-z0-9])|(?<=\\[ntr])){re.escape(account)}(?![A-Za-z0-9])", "user", text)
 
 
 def copy_tree(src: str, dst: str) -> int:
